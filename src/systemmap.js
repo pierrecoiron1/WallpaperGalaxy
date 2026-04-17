@@ -287,6 +287,7 @@ export class SystemMap {
     this.renderOrbitalView(t, W, H, rT);
     this.renderReadouts(W, H, rT);
     this.renderPlanetList(W, H, rT);
+    this.renderTelemetry(t, W, H, rT);
     ctx.restore();
 
     // Rising scanline — subtle anime sci-fi touch
@@ -353,28 +354,40 @@ export class SystemMap {
     const sys = this.system;
 
     // --- Top bar --- (slot 0.02..0.10 for chrome/small text, 0.06..0.22 for big name)
-    const headerAlpha = sMoothSlot(rT, 0.02, 0.08);
-    ctx.save();
-    ctx.globalAlpha *= headerAlpha;
-    rLine(ctx, 40, 60, W - 40, 60, FG_DIM);
-    rText(ctx, 40, 40, 'INTERSTELLAR COMMONWEALTH · CARTOGRAPHIC SERVICE', {
-      size: 11, color: FG_DIM, letterSpacing: 2,
-      reveal: { t: rT, start: 0.03, end: 0.12 },
-    });
-    ctx.restore();
+    // --- Top bar (revised layout) ---
+    //   y=80   hero system name (left), "SYSTEM CHART ..." centered,
+    //           "INTERSTELLAR COMMONWEALTH..." right-justified  — all same baseline
+    //   y=100  divider line
+    const TOP_RULE_Y = 100;
+    const manifestRightEdge = W - 40;
+    const HEADER_BASE_Y = 80;
 
-    // Hero name — types in slowly
-    rText(ctx, 40, 88, sys.fullName, {
+    // Hero name — left side
+    rText(ctx, 40, HEADER_BASE_Y, sys.fullName, {
       size: 42, weight: 300, color: FG_HOT, font: FONT_DISPLAY, letterSpacing: 2,
       reveal: { t: rT, start: 0.06, end: 0.22 },
     });
 
+    // Coordinates — centered, same baseline as the hero name
+    const coordAlpha = sMoothSlot(rT, 0.12, 0.06);
     ctx.save();
-    ctx.globalAlpha *= sMoothSlot(rT, 0.12, 0.06);
-    rText(ctx, 40, 112, `SYSTEM CHART · ${sys.charterNumber} · ${sys.galCoord}`, {
-      size: 11, color: FG_DIM, letterSpacing: 2,
+    ctx.globalAlpha *= coordAlpha;
+    rText(ctx, W / 2, HEADER_BASE_Y, `SYSTEM CHART · ${sys.charterNumber} · ${sys.galCoord}`, {
+      size: 11, color: FG_DIM, letterSpacing: 2, align: 'center',
       reveal: { t: rT, start: 0.12, end: 0.20 },
     });
+    ctx.restore();
+
+    // Commonwealth line — right-justified, same baseline
+    const headerAlpha = sMoothSlot(rT, 0.02, 0.08);
+    ctx.save();
+    ctx.globalAlpha *= headerAlpha;
+    rText(ctx, manifestRightEdge, HEADER_BASE_Y, 'INTERSTELLAR COMMONWEALTH · CARTOGRAPHIC SERVICE', {
+      size: 11, color: FG_DIM, letterSpacing: 2, align: 'right',
+      reveal: { t: rT, start: 0.03, end: 0.12 },
+    });
+    // Top divider, lowered to sit under the hero name
+    rLine(ctx, 40, TOP_RULE_Y, W - 40, TOP_RULE_Y, FG_DIM);
     ctx.restore();
 
     // Status badge (top right) — flicker on
@@ -382,24 +395,12 @@ export class SystemMap {
       'CORE': FG_GOLD, 'SETTLED': FG_HOT, 'FRONTIER': FG, 'SURVEY': FG_DIM, 'UNCHARTED': '#c87070',
     }[sys.status] || FG_DIM;
     const statusText = sys.status;
-    ctx.save();
-    ctx.font = `500 14px ${FONT_MONO}`;
-    const statusW = ctx.measureText(statusText).width + 40;
-    ctx.restore();
 
-    const badgeAlpha = sMoothSlot(rT, 0.18, 0.04);
-    // Blink the badge on during flicker window
-    const badgeFlicker = rT < 0.24 ? (Math.sin(rT * 180) > 0.3 ? 1 : 0.2) : 1;
-    ctx.save();
-    ctx.globalAlpha *= badgeAlpha * badgeFlicker;
-    rRect(ctx, W - 40 - statusW, 34, statusW, 28, statusColor);
-    rText(ctx, W - 40 - statusW + 20, 53, statusText, {
-      size: 14, color: statusColor, letterSpacing: 3, weight: 500,
-    });
-    rText(ctx, W - 40 - statusW, 82, sys.surveyYear ? `SURVEYED ${sys.surveyYear} IC` : 'NO SURVEY ON RECORD', {
-      size: 10, color: FG_DIM, letterSpacing: 2,
-    });
-    ctx.restore();
+    // Status badge is drawn later (between SYSTEM · AGGREGATE and PLANETARY
+    // MANIFEST — see renderPlanetList). We still need the status color /
+    // label available for that call.
+    this._statusColor = statusColor;
+    this._statusText = statusText;
 
     // Rolling timestamp ticker (bottom)
     const time = new Date();
@@ -420,16 +421,33 @@ export class SystemMap {
     const ctx = this.ctx;
     const sys = this.system;
 
-    // Orbital plot in right-center — leave left for readouts
-    const cx = W * 0.58;
+    // Orbital plot.  Anchor the frame's left bracket at x=424 (24px gap from
+    // the tables that end at x=400) rather than centering the view in the
+    // available strip — the vertical-limited circle was leaving too much
+    // empty space on the left.  The right column is still reserved.
+    const TABLES_RIGHT = 40 + 360;
+    const GAP = 24;
+    const targetFrameX = TABLES_RIGHT + GAP;   // bracket sits here = 424
+    const rightEdge = W - 40 - 360 - 20;       // preserve right-side reservation
+    // Max radius is limited by whichever is smaller: available horizontal
+    // room from targetFrameX+40 (inner orbit start) to rightEdge-40, OR the
+    // vertical budget (H * 0.4).
+    const availableWidth = rightEdge - (targetFrameX + 40) - 40; // room for diameter
+    const maxR = Math.min(availableWidth / 2, H * 0.4);
+    const cx = targetFrameX + 40 + maxR;       // center = leftInner + radius
     const cy = H * 0.54;
-    const maxR = Math.min(W * 0.36, H * 0.4);
 
-    // Outer frame brackets — appear mid-reveal
+    // Outer frame brackets — appear mid-reveal.
+    // Clamp the frame so its bottom brackets sit ABOVE the H-44 divider line
+    // (leave ~24px gap so the bracket glyph is clearly above the rule).
     const frameAlpha = sMoothSlot(rT, 0.28, 0.06);
-    const frameX = cx - maxR - 40;
-    const frameY = cy - maxR - 40;
-    const frameSize = (maxR + 40) * 2;
+    let frameX = cx - maxR - 40;
+    let frameY = cy - maxR - 40;
+    let frameSize = (maxR + 40) * 2;
+    const frameBottomLimit = H - 44 - 24;
+    if (frameY + frameSize > frameBottomLimit) {
+      frameSize = frameBottomLimit - frameY;
+    }
     ctx.save();
     ctx.globalAlpha *= frameAlpha;
     rBracket(ctx, frameX, frameY, frameSize, frameSize, 18, FG_DIM);
@@ -562,7 +580,16 @@ export class SystemMap {
 
     // Left column — star readouts.  Section header flickers in first.
     const colX = 40;
-    let y = 180;
+    // Align the TOP of the header text with the top of the orbital view frame
+    // (same y as the UNCHARTED badge). Mirror the orbital-view geometry here.
+    const _cy = H * 0.54;
+    const _leftE = 360 + 20;
+    const _rightE = (W - 40 - 360) - 20;
+    const _stripHalf = (_rightE - _leftE) / 2;
+    const _maxR = Math.min(_stripHalf - 40, H * 0.4);
+    const frameTopY = Math.round(_cy - _maxR - 40);
+    // Baseline so cap-top sits at frameTopY (11px font → cap ≈ 8px).
+    let y = frameTopY + 10;
     const rowH = 26;
 
     const headerAlpha = sMoothSlot(rT, 0.16, 0.04);
@@ -573,7 +600,7 @@ export class SystemMap {
       reveal: { t: rT, start: 0.16, end: 0.22 },
     });
     y += 16;
-    rLine(ctx, colX, y, colX + 320, y, FG_DIM);
+    rLine(ctx, colX, y, colX + 360, y, FG_DIM);
     y += 20;
     ctx.restore();
 
@@ -600,7 +627,7 @@ export class SystemMap {
           size: 11, color: FG_DIM, letterSpacing: 2,
           reveal: { t: rT, start: rowStart, end: rowStart + 0.04 },
         });
-        rText(ctx, colX + 320, y, String(v), {
+        rText(ctx, colX + 360, y, String(v), {
           size: 13, color: FG_HOT, align: 'right',
           reveal: { t: rT, start: rowStart + 0.01, end: rowStart + 0.06 },
         });
@@ -619,7 +646,7 @@ export class SystemMap {
       reveal: { t: rT, start: 0.45, end: 0.50 },
     });
     y += 16;
-    rLine(ctx, colX, y, colX + 320, y, FG_DIM);
+    rLine(ctx, colX, y, colX + 360, y, FG_DIM);
     y += 20;
     ctx.restore();
 
@@ -641,22 +668,28 @@ export class SystemMap {
         ctx.globalAlpha *= a;
         rText(ctx, colX, y, k, { size: 11, color: FG_DIM, letterSpacing: 2,
           reveal: { t: rT, start: rowStart, end: rowStart + 0.04 } });
-        rText(ctx, colX + 320, y, String(v), { size: 13, color: FG_HOT, align: 'right',
+        rText(ctx, colX + 360, y, String(v), { size: 13, color: FG_HOT, align: 'right',
           reveal: { t: rT, start: rowStart + 0.01, end: rowStart + 0.05 } });
         ctx.restore();
       }
       y += rowH;
     }
+    // Remember where the aggregate table ends so the planet list can sit
+    // below it on the same left column.
+    this._aggregateEndY = y;
   }
 
   renderPlanetList(W, H, rT = 1) {
     const ctx = this.ctx;
     const sys = this.system;
 
-    // Right column — planet table
-    const colX = W - 40 - 360;
+    // Left column — planet table sits BELOW the system aggregate table,
+    // using the same colX=40 as the stellar readouts.  Width matches the
+    // stellar readouts / aggregate (colX + 360) so everything right-aligns,
+    // and the SURVEY column doesn't bleed into the orbital view.
+    const colX = 40;
     const colW = 360;
-    let y = 180;
+    let y = (this._aggregateEndY || 400) + 24;
 
     const headerAlpha = sMoothSlot(rT, 0.20, 0.04);
     ctx.save();
@@ -669,11 +702,19 @@ export class SystemMap {
     rLine(ctx, colX, y, colX + colW, y, FG_DIM);
     y += 20;
 
+    // Column geometry — fixed right-edges so long values don't overlap.
+    //   NO:          [colX .. colX+32]
+    //   DESIGNATION: [colX+44 .. typeRight - 8]
+    //   TYPE:        right-aligned at typeRight
+    //   SURVEY:      right-aligned at colX + colW
+    const surveyRight = colX + colW;
+    const typeRight = surveyRight - 96; // reserve 96px for SURVEY column
+
     // Table header
     rText(ctx, colX, y, 'NO.', { size: 10, color: FG_DIM, letterSpacing: 2 });
-    rText(ctx, colX + 36, y, 'DESIGNATION', { size: 10, color: FG_DIM, letterSpacing: 2 });
-    rText(ctx, colX + colW - 80, y, 'TYPE', { size: 10, color: FG_DIM, letterSpacing: 2 });
-    rText(ctx, colX + colW, y, 'SURVEY', { size: 10, color: FG_DIM, letterSpacing: 2, align: 'right' });
+    rText(ctx, colX + 44, y, 'DESIGNATION', { size: 10, color: FG_DIM, letterSpacing: 2 });
+    rText(ctx, typeRight, y, 'TYPE', { size: 10, color: FG_DIM, letterSpacing: 2, align: 'right' });
+    rText(ctx, surveyRight, y, 'SURVEY', { size: 10, color: FG_DIM, letterSpacing: 2, align: 'right' });
     y += 10;
     rLine(ctx, colX, y, colX + colW, y, FG_DIM, 1, [2, 2]);
     y += 18;
@@ -707,21 +748,64 @@ export class SystemMap {
       rText(ctx, colX + 16, y, romanNums[i] || String(i + 1), {
         size: 12, color: FG, letterSpacing: 1,
       });
-      rText(ctx, colX + 48, y, p.name, {
+      rText(ctx, colX + 44, y, p.name, {
         size: 12, color: FG_HOT,
         reveal: { t: rT, start: rowStart, end: rowStart + 0.05 },
       });
-      rText(ctx, colX + colW - 80, y, p.typeLabel, {
-        size: 10, color: FG_DIM, letterSpacing: 2,
+      rText(ctx, typeRight, y, p.typeLabel, {
+        size: 10, color: FG_DIM, letterSpacing: 2, align: 'right',
         reveal: { t: rT, start: rowStart + 0.01, end: rowStart + 0.05 },
       });
       const surveyColor = p.survey === 'CHARTED' ? FG_GOLD : (p.survey === 'PRELIMINARY' ? FG : FG_DIM);
-      rText(ctx, colX + colW, y, p.survey, {
+      rText(ctx, surveyRight, y, p.survey, {
         size: 10, color: surveyColor, letterSpacing: 2, align: 'right',
         reveal: { t: rT, start: rowStart + 0.02, end: rowStart + 0.06 },
       });
       ctx.restore();
       y += 24;
+    }
+
+    // --- Signal Intercepts block (below manifest) ---
+    if (sys.signalIntercepts && sys.signalIntercepts.length) {
+      y += 22;
+      const siHeaderAlpha = sMoothSlot(rT, 0.78, 0.04);
+      ctx.save();
+      ctx.globalAlpha *= siHeaderAlpha;
+      rText(ctx, colX, y, 'SIGNAL · INTERCEPTS', {
+        size: 11, color: FG_DIM, letterSpacing: 2,
+        reveal: { t: rT, start: 0.78, end: 0.84 },
+      });
+      y += 16;
+      rLine(ctx, colX, y, colX + colW, y, FG_DIM);
+      y += 18;
+      ctx.restore();
+
+      for (let i = 0; i < sys.signalIntercepts.length; i++) {
+        const s = sys.signalIntercepts[i];
+        const rowStart = 0.84 + (i / Math.max(1, sys.signalIntercepts.length)) * 0.10;
+        const a = sMoothSlot(rT, rowStart, 0.04);
+        if (a < 0.01) { y += 20; continue; }
+        ctx.save();
+        ctx.globalAlpha *= a;
+        const stateColor = s.hot ? '#c87070' : FG_DIM;
+        // band on the left, state right-aligned at typeRight, note
+        // right-aligned at surveyRight.
+        rText(ctx, colX, y, s.band, {
+          size: 10, color: s.hot ? FG : FG_DIM, letterSpacing: 2,
+          reveal: { t: rT, start: rowStart, end: rowStart + 0.04 },
+        });
+        rText(ctx, colX + colW, y, s.state, {
+          size: 10, color: stateColor, letterSpacing: 2, align: 'right',
+          reveal: { t: rT, start: rowStart + 0.01, end: rowStart + 0.05 },
+        });
+        y += 14;
+        rText(ctx, colX, y, s.note, {
+          size: 9, color: s.hot ? '#c87070' : FG_DIM, letterSpacing: 2,
+          reveal: { t: rT, start: rowStart + 0.02, end: rowStart + 0.06 },
+        });
+        ctx.restore();
+        y += 16;
+      }
     }
   }
 
@@ -843,5 +927,441 @@ export class SystemMap {
 
     // Corner brackets
     rBracket(ctx, 40, 80, W - 80, H - 140, 24, FG_DIM);
+  }
+
+  // ==========================================================
+  // Right-side telemetry column: 3 stacked panels with animated graphs.
+  // Stellar spectrum, photometric light curve, signal waterfall.
+  // ==========================================================
+  renderTelemetry(t, W, H, rT) {
+    const ctx = this.ctx;
+    const sys = this.system;
+    if (!sys) return;
+    // Stretch telemetry column leftward so it sits ~24px to the right of the
+    // orbital-view frame (mirror of the 24px gap between the left tables and
+    // the orbital view's left bracket).  Must match renderOrbitalView geometry.
+    const TABLES_RIGHT = 40 + 360;
+    const ORB_GAP = 24;
+    const targetFrameX = TABLES_RIGHT + ORB_GAP;
+    const rightEdgeLegacy = W - 40 - 360 - 20;
+    const availableWidth = rightEdgeLegacy - (targetFrameX + 40) - 40;
+    const maxR = Math.min(availableWidth / 2, H * 0.4);
+    const cx = targetFrameX + 40 + maxR;
+    const orbFrameRight = cx + maxR + 40;
+    const X = Math.round(orbFrameRight + 24);
+    const COL_W = W - 40 - X;
+    const TOP_Y = 108;
+    const BOT_Y = H - 70;
+    const GAP = 20;
+    const PANEL_H = Math.floor((BOT_Y - TOP_Y - GAP * 2) / 3);
+
+    this._renderSpectrumPanel(t, X, TOP_Y,                    COL_W, PANEL_H, rT);
+    this._renderLightCurvePanel(t, X, TOP_Y + (PANEL_H + GAP),   COL_W, PANEL_H, rT);
+    this._renderWaterfallPanel(t, X, TOP_Y + (PANEL_H + GAP) * 2, COL_W, PANEL_H, rT);
+  }
+
+  // Frame + title shared by telemetry panels
+  _telemetryFrame(x, y, w, h, title, subtitle, rT, revealStart) {
+    const ctx = this.ctx;
+    const alpha = sMoothSlot(rT, revealStart, 0.06);
+    if (alpha < 0.01) return false;
+    ctx.save();
+    ctx.globalAlpha *= alpha;
+    rBracket(ctx, x, y, w, h, 14, FG_DIM);
+    rText(ctx, x + 18, y + 14, title, {
+      size: 10, color: FG_DIM, letterSpacing: 2,
+      reveal: { t: rT, start: revealStart, end: revealStart + 0.05 },
+    });
+    if (subtitle) {
+      rText(ctx, x + w - 18, y + 14, subtitle, {
+        size: 10, color: FG_DIM, letterSpacing: 2, align: 'right',
+        reveal: { t: rT, start: revealStart + 0.01, end: revealStart + 0.06 },
+      });
+    }
+    ctx.restore();
+    return true;
+  }
+
+  // ---- Panel 1: Stellar Spectrum (absorption lines) -------------------
+  _renderSpectrumPanel(t, x, y, w, h, rT) {
+    const ctx = this.ctx;
+    const sys = this.system;
+    const revealStart = 0.55;
+    if (!this._telemetryFrame(x, y, w, h, 'SPECTRAL ANALYSIS',
+        `${sys.spectralClass}-TYPE EMISSION`, rT, revealStart)) return;
+
+    // Inner plot area
+    const px = x + 32, py = y + 40;
+    const pw = w - 56, ph = h - 64;
+    const alpha = sMoothSlot(rT, revealStart + 0.04, 0.10);
+    if (alpha < 0.01) return;
+    ctx.save();
+    ctx.globalAlpha *= alpha;
+
+    // Wavelength axis — 380..740 nm
+    const rng = (seedOff) => {
+      // quick deterministic per-system jitter
+      let s = (sys.seed ^ seedOff) >>> 0;
+      return () => {
+        s = (s * 1664525 + 1013904223) >>> 0;
+        return (s & 0xffffffff) / 0x100000000;
+      };
+    };
+    const r = rng(0xA17E);
+
+    // Axis
+    ctx.strokeStyle = FG_DIM; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(px, py + ph); ctx.lineTo(px + pw, py + ph); ctx.stroke();
+    // Ticks
+    for (let i = 0; i <= 6; i++) {
+      const tx = px + (i / 6) * pw;
+      ctx.beginPath(); ctx.moveTo(tx, py + ph); ctx.lineTo(tx, py + ph + 4); ctx.stroke();
+      const nm = 380 + i * 60;
+      rText(ctx, tx, py + ph + 16, `${nm}`, { size: 8, color: FG_DIM, align: 'center', letterSpacing: 1 });
+    }
+    rText(ctx, px + pw / 2, py + ph + 30, 'WAVELENGTH  nm', {
+      size: 8, color: FG_DIM, letterSpacing: 3, align: 'center',
+    });
+
+    // Blackbody continuum — approximate curve peak based on temperature.
+    // Peak wavelength (Wien): λ_max ≈ 2.898e6 / T (nm).  Normalize to plot.
+    const T = sys.temperature || 5500;
+    const peakNm = Math.max(380, Math.min(740, 2.898e6 / T));
+    const sigma = 160;
+    const samples = Math.floor(pw);
+    const continuum = new Array(samples);
+    for (let i = 0; i < samples; i++) {
+      const nm = 380 + (i / samples) * 360;
+      const gauss = Math.exp(-Math.pow((nm - peakNm) / sigma, 2));
+      continuum[i] = gauss;
+    }
+
+    // Absorption lines (Fraunhofer-ish) — pick a few per spectral class.
+    const classLines = {
+      O: ['He II 454', 'He I 447', 'H β 486', 'C III 465'],
+      B: ['He I 447', 'H β 486', 'H γ 434', 'Mg II 448'],
+      A: ['H α 656', 'H β 486', 'H γ 434', 'Ca II 393'],
+      F: ['H α 656', 'Ca II 393', 'Ca I 422', 'Fe I 527'],
+      G: ['Na D 589', 'Ca II 393', 'Fe I 527', 'H α 656'],
+      K: ['Na D 589', 'Mg I 518', 'Fe I 527', 'TiO 615'],
+      M: ['TiO 615', 'TiO 665', 'Na D 589', 'Ca I 422'],
+    };
+    const lines = classLines[sys.spectralClass] || classLines.G;
+    const dips = lines.map(label => {
+      const m = label.match(/(\d+)/);
+      const nm = m ? parseInt(m[1], 10) : 500;
+      return { label, nm, depth: 0.35 + r() * 0.4, width: 4 + r() * 6 };
+    });
+
+    // Subtract absorption from continuum
+    const flux = continuum.slice();
+    for (let i = 0; i < samples; i++) {
+      const nm = 380 + (i / samples) * 360;
+      for (const d of dips) {
+        const k = Math.exp(-Math.pow((nm - d.nm) / d.width, 2));
+        flux[i] *= (1 - d.depth * k);
+      }
+    }
+
+    // Tiny breathing jitter so it feels alive
+    const jitter = Math.sin(t * 2.1) * 0.01 + Math.sin(t * 7.3) * 0.005;
+
+    // Plot continuum (dim)
+    ctx.strokeStyle = FG_DIM; ctx.lineWidth = 1;
+    ctx.beginPath();
+    for (let i = 0; i < samples; i++) {
+      const vx = px + i;
+      const vy = py + ph - continuum[i] * (ph - 20);
+      if (i === 0) ctx.moveTo(vx, vy); else ctx.lineTo(vx, vy);
+    }
+    ctx.stroke();
+
+    // Plot flux (hot)
+    ctx.strokeStyle = FG_HOT; ctx.lineWidth = 1.2;
+    ctx.beginPath();
+    for (let i = 0; i < samples; i++) {
+      const vx = px + i;
+      const vy = py + ph - (flux[i] + jitter) * (ph - 20);
+      if (i === 0) ctx.moveTo(vx, vy); else ctx.lineTo(vx, vy);
+    }
+    ctx.stroke();
+
+    // Label the dips
+    ctx.font = `8px ${FONT_MONO}`;
+    for (const d of dips) {
+      const lx = px + ((d.nm - 380) / 360) * pw;
+      const gauss = Math.exp(-Math.pow((d.nm - peakNm) / sigma, 2));
+      const dipY = py + ph - (gauss * (1 - d.depth)) * (ph - 20);
+      ctx.strokeStyle = FG_DIM; ctx.lineWidth = 1;
+      ctx.setLineDash([1, 2]);
+      ctx.beginPath(); ctx.moveTo(lx, dipY); ctx.lineTo(lx, py + 6); ctx.stroke();
+      ctx.setLineDash([]);
+      rText(ctx, lx, py, d.label, {
+        size: 8, color: FG_DIM, align: 'center', letterSpacing: 1,
+      });
+    }
+    ctx.restore();
+  }
+
+  // ---- Panel 2: Orbital Phase / Transit Almanac ----------------------
+  // Polar diagram showing each inner planet's orbital phase.  Concentric
+  // dashed rings with a dot per planet that slowly sweeps around.  A short
+  // arc on each ring marks the "transit zone" (observer line-of-sight), so
+  // as a dot crosses the arc it visually reads as "transiting now".
+  _renderLightCurvePanel(t, x, y, w, h, rT) {
+    const ctx = this.ctx;
+    const sys = this.system;
+    const revealStart = 0.64;
+    if (!this._telemetryFrame(x, y, w, h, 'ORBITAL PHASE ALMANAC',
+        'INNER · LIVE', rT, revealStart)) return;
+
+    const alpha = sMoothSlot(rT, revealStart + 0.04, 0.10);
+    if (alpha < 0.01) return;
+    ctx.save();
+    ctx.globalAlpha *= alpha;
+
+    // Geometry: polar diagram on the left, mini phase-bar legend on the right
+    const padL = 24, padR = 16, padT = 38, padB = 22;
+    const innerW = w - padL - padR;
+    const innerH = h - padT - padB;
+    const polarSize = Math.min(innerH, innerW * 0.55);
+    const cx = x + padL + polarSize / 2;
+    const cy = y + padT + polarSize / 2;
+    const rMax = polarSize / 2 - 6;
+
+    // Pick up to 4 inner planets to visualise
+    const picks = sys.planets.slice(0, Math.min(4, sys.planets.length));
+    const n = picks.length;
+    if (n === 0) { ctx.restore(); return; }
+
+    // Transit zone: the observer sits to the right (+x axis); a narrow wedge
+    // there is "in transit".  Wedge half-width in radians.
+    const transitHalfWidth = 0.16;
+
+    // Central star marker
+    ctx.fillStyle = FG_HOT;
+    ctx.globalAlpha *= 0.9;
+    ctx.beginPath(); ctx.arc(cx, cy, 3, 0, Math.PI * 2); ctx.fill();
+    ctx.globalAlpha /= 0.9;
+
+    // Observer direction tick (small arrow outside max ring)
+    ctx.strokeStyle = FG_DIM; ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(cx + rMax + 4, cy);
+    ctx.lineTo(cx + rMax + 12, cy);
+    ctx.stroke();
+    rText(ctx, cx + rMax + 16, cy + 3, 'OBS', { size: 8, color: FG_DIM, letterSpacing: 1 });
+
+    // Draw each orbit ring + transit wedge + planet dot
+    for (let i = 0; i < n; i++) {
+      const p = picks[i];
+      const r = rMax * (0.28 + (i / Math.max(1, n - 1)) * 0.72);
+
+      // Dashed orbit ring
+      ctx.save();
+      ctx.globalAlpha *= 0.55;
+      ctx.strokeStyle = FG_DIM;
+      ctx.setLineDash([2, 4]);
+      ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.restore();
+
+      // Transit zone arc (solid, brighter) — sits on +x axis
+      ctx.save();
+      ctx.strokeStyle = FG_GOLD;
+      ctx.globalAlpha *= 0.5;
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.arc(cx, cy, r, -transitHalfWidth, transitHalfWidth);
+      ctx.stroke();
+      ctx.restore();
+
+      // Planet dot — phase driven by orbit period (slow, varied)
+      const period = 28 + i * 18; // seconds per revolution (inner faster)
+      const phase0 = (p.orbit || 1) * 0.9 + i * 1.3; // deterministic offset
+      const theta = phase0 + (t / period) * Math.PI * 2;
+      const dx = cx + Math.cos(theta) * r;
+      const dy = cy + Math.sin(theta) * r;
+
+      // Check if in transit — brighten dot when inside wedge
+      const wrapped = ((theta % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2);
+      const inTransit = wrapped < transitHalfWidth || wrapped > (Math.PI * 2 - transitHalfWidth);
+
+      ctx.save();
+      if (inTransit) {
+        ctx.fillStyle = FG_GOLD;
+        ctx.shadowColor = FG_GOLD;
+        ctx.shadowBlur = 6;
+      } else {
+        ctx.fillStyle = FG_HOT;
+      }
+      ctx.beginPath(); ctx.arc(dx, dy, 3, 0, Math.PI * 2); ctx.fill();
+      ctx.restore();
+
+      // Planet label just outside its ring, at its current angle
+      const labelR = r + 9;
+      const lx = cx + Math.cos(theta) * labelR;
+      const ly = cy + Math.sin(theta) * labelR;
+      // Nudge label away from star center
+      const labelAlign = Math.cos(theta) < 0 ? 'right' : 'left';
+      rText(ctx, lx + (labelAlign === 'right' ? -2 : 2), ly + 3, p.designation || `P${i+1}`, {
+        size: 8, color: FG_DIM, letterSpacing: 1, align: labelAlign,
+      });
+    }
+
+    // Right-side mini phase bars — one per planet showing fraction of orbit
+    const barX = x + padL + polarSize + 18;
+    const barW = x + w - padR - barX;
+    if (barW > 60) {
+      let by = y + padT + 4;
+      rText(ctx, barX, by, 'PHASE', { size: 8, color: FG_DIM, letterSpacing: 2 });
+      by += 12;
+      const rowH = Math.min(22, (innerH - 16) / n);
+      for (let i = 0; i < n; i++) {
+        const p = picks[i];
+        const period = 28 + i * 18;
+        const phase0 = (p.orbit || 1) * 0.9 + i * 1.3;
+        const theta = phase0 + (t / period) * Math.PI * 2;
+        const wrapped = ((theta % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2);
+        const frac = wrapped / (Math.PI * 2);
+
+        // Label (planet designation)
+        rText(ctx, barX, by + 8, p.designation || `P${i+1}`, {
+          size: 8, color: FG_DIM, letterSpacing: 1,
+        });
+        // Bar track
+        const trackX = barX + 28;
+        const trackW = barW - 28;
+        const trackY = by + 4;
+        ctx.strokeStyle = FG_DIM;
+        ctx.globalAlpha *= 0.6;
+        ctx.beginPath();
+        ctx.moveTo(trackX, trackY + 4);
+        ctx.lineTo(trackX + trackW, trackY + 4);
+        ctx.stroke();
+        ctx.globalAlpha /= 0.6;
+
+        // Transit marker on track (at start — corresponds to wrapped==0)
+        ctx.strokeStyle = FG_GOLD;
+        ctx.globalAlpha *= 0.7;
+        ctx.beginPath();
+        ctx.moveTo(trackX, trackY); ctx.lineTo(trackX, trackY + 8);
+        ctx.stroke();
+        ctx.globalAlpha /= 0.7;
+
+        // Fill position
+        const fx = trackX + trackW * frac;
+        ctx.fillStyle = FG_HOT;
+        ctx.beginPath(); ctx.arc(fx, trackY + 4, 2.5, 0, Math.PI * 2); ctx.fill();
+
+        by += rowH;
+      }
+    }
+
+    ctx.restore();
+  }
+
+  // ---- Panel 3: Signal Waterfall (frequency × time) -------------------
+  _renderWaterfallPanel(t, x, y, w, h, rT) {
+    const ctx = this.ctx;
+    const sys = this.system;
+    const revealStart = 0.72;
+    if (!this._telemetryFrame(x, y, w, h, 'INTERFEROMETRIC SIGNAL',
+        '1.4 – 22 GHz', rT, revealStart)) return;
+
+    const px = x + 32, py = y + 40;
+    const pw = w - 56, ph = h - 64;
+    const alpha = sMoothSlot(rT, revealStart + 0.04, 0.10);
+    if (alpha < 0.01) return;
+    ctx.save();
+    ctx.globalAlpha *= alpha;
+
+    // Axis ticks — frequency along x
+    ctx.strokeStyle = FG_DIM; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(px, py + ph); ctx.lineTo(px + pw, py + ph); ctx.stroke();
+    const freqs = ['1.4', '5.0', '10', '22'];
+    for (let i = 0; i < freqs.length; i++) {
+      const fx = px + (i / (freqs.length - 1)) * pw;
+      ctx.beginPath(); ctx.moveTo(fx, py + ph); ctx.lineTo(fx, py + ph + 4); ctx.stroke();
+      rText(ctx, fx, py + ph + 16, freqs[i] + ' GHz', {
+        size: 8, color: FG_DIM, align: 'center', letterSpacing: 1,
+      });
+    }
+
+    // Waterfall pixels — time (y, older at bottom) × frequency (x).
+    // Cheap render: N rows × M cols with per-cell intensity.
+    const ROWS = 40;
+    const COLS = Math.min(60, Math.floor(pw / 4));
+    const cellW = pw / COLS;
+    const cellH = ph / ROWS;
+
+    // Pull anomalous intercept's approximate frequency, if any, for a vertical "bright line"
+    const anom = (sys.signalIntercepts || []).find(s => s.hot);
+    let anomCol = -1;
+    if (anom) {
+      // Map known bands to 1.4..22 GHz axis position
+      const band = anom.band;
+      let freqGHz = null;
+      const m = band.match(/([\d.]+)\s*(GHz|MHz|kHz|keV|Hz)/i);
+      if (m) {
+        const v = parseFloat(m[1]);
+        const u = m[2].toLowerCase();
+        if (u === 'ghz') freqGHz = v;
+        else if (u === 'mhz') freqGHz = v / 1000;
+        else if (u === 'hz' || u === 'khz') freqGHz = 1.42; // fallback: H-line
+        else freqGHz = null; // X-ray/gamma — no column
+      }
+      if (freqGHz !== null && freqGHz >= 1.4 && freqGHz <= 22) {
+        // Log-ish axis: 1.4..22 → 0..1
+        const a = Math.log(freqGHz / 1.4) / Math.log(22 / 1.4);
+        anomCol = Math.floor(a * COLS);
+      }
+    }
+
+    // Simple seeded noise
+    const seed = (sys.seed ^ 0xBEEF) >>> 0;
+    const noise = (i, j, frame) => {
+      // cheap reproducible hash
+      let s = (seed + i * 73856093 + j * 19349663 + frame * 83492791) >>> 0;
+      s ^= s << 13; s >>>= 0;
+      s ^= s >>> 17; s >>>= 0;
+      s ^= s << 5;  s >>>= 0;
+      return (s & 0xffff) / 0xffff;
+    };
+
+    const frame = Math.floor(t * 2);
+    for (let j = 0; j < ROWS; j++) {
+      for (let i = 0; i < COLS; i++) {
+        let v = noise(i, j, frame) * 0.35;
+        // Subtle band at 1.42 GHz (hydrogen) always present
+        const hCol = Math.floor(Math.log(1.42 / 1.4) / Math.log(22 / 1.4) * COLS);
+        if (Math.abs(i - hCol) < 1) v += 0.15;
+        // Anomaly — bright coherent line
+        if (anomCol >= 0 && Math.abs(i - anomCol) < 1) {
+          v += 0.5 + Math.sin((j + t * 4) * 0.6) * 0.1;
+        }
+        v = Math.max(0, Math.min(1, v));
+        // Colorize: hot → warm gold if anomaly column, otherwise teal
+        let col;
+        if (anomCol >= 0 && Math.abs(i - anomCol) < 1) {
+          col = `rgba(200, 120, 100, ${v * 0.95})`;
+        } else {
+          col = `rgba(159, 218, 218, ${v * 0.4})`;
+        }
+        ctx.fillStyle = col;
+        ctx.fillRect(px + i * cellW, py + j * cellH, cellW + 0.5, cellH + 0.5);
+      }
+    }
+
+    // Top "arrow of time" label
+    rText(ctx, px, py - 4, 'TIME ↓', {
+      size: 8, color: FG_DIM, letterSpacing: 2,
+    });
+    rText(ctx, px + pw, py - 4, anom ? 'ANOMALY FLAGGED' : 'NO COHERENT SIGNAL', {
+      size: 8, color: anom ? '#c87070' : FG_DIM, letterSpacing: 2, align: 'right',
+    });
+
+    ctx.restore();
   }
 }

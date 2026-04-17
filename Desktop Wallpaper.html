@@ -163,6 +163,19 @@
     document.body.classList.add('pane-mode', 'pane-' + paneMode);
     // Distinctive title so the launcher can find each window via xdotool.
     document.title = 'DesktopWallpaper-' + paneMode.toUpperCase();
+    // Match canvas intrinsic size to the actual window so we render at the
+    // monitor's native resolution without CSS scaling. Done before modules
+    // load so renderers read the correct dimensions in their constructors.
+    const W = window.innerWidth, H = window.innerHeight;
+    if (paneMode === 'galaxy') {
+      const gc = document.getElementById('galaxyCanvas');
+      const gh = document.getElementById('galaxyHUD');
+      gc.width = W;  gc.height = H;
+      gh.width = W;  gh.height = H;
+    } else {
+      const sc = document.getElementById('systemCanvas');
+      sc.width = W;  sc.height = H;
+    }
   }
 
   // Cache-bust imports so we always get the latest module code
@@ -232,33 +245,69 @@
   window.addEventListener('resize', fitLayout);
 
   // ---------- Target selection & handover ----------
+  // The galaxy and chart panes run in separate browser windows, but they sync
+  // through a tiny Python backend (wallpaper_server.py). The server holds a
+  // single uint32 "current seed". The galaxy pane POSTs /api/rotate when its
+  // reticle star drifts off screen; the chart pane polls /api/current and
+  // re-renders when the seed changes. No time-based handover.
   let currentTrack = null;
   let currentSystem = null;
+  let currentSystemSeed = null;
 
-  function pickNewTarget() {
-    // Try a few times to find a star well inside the viewport
+  // Attach the galaxy pane's reticle to a currently-visible star. Galaxy-only.
+  function rebindReticle() {
     let picked = null;
     for (let tries = 0; tries < 5 && !picked; tries++) {
       picked = galaxy.pickRandomVisibleStar();
     }
-    if (!picked) return;
-    currentTrack = picked;
-    const system = generateSystem(picked.seedHash);
-    currentSystem = system;
-    galaxy.setHighlight(picked);
-    hud.setTrackedStar(picked, system);
-    systemMap.setSystem(system, true);
+    if (picked) {
+      currentTrack = picked;
+      galaxy.setHighlight(picked);
+      hud.setTrackedStar(picked, currentSystem);
+    }
   }
 
-  // Every handoverMinutes, pick a new one
-  let nextHandover = 0;
-  function scheduleNextHandover() {
-    nextHandover = Date.now() + TWEAK_DEFAULS.handoverMinutes * 60 * 1000;
-    hud.nextLockTime = nextHandover;
+  // Re-apply whatever system we currently hold to both panes (idempotent).
+  // Called after warmup ends and whenever the seed changes.
+  function applyCurrentSystem() {
+    if (!currentSystem) return;
+    if (paneMode !== 'galaxy') {
+      systemMap.setSystem(currentSystem, true);
+    }
+    if (paneMode !== 'chart') {
+      rebindReticle();
+    }
   }
 
-  pickNewTarget();
-  scheduleNextHandover();
+  function applySeed(seed) {
+    if (seed === currentSystemSeed && currentSystem) return;
+    currentSystemSeed = seed;
+    currentSystem = generateSystem(seed);
+    if (!warmupActive) applyCurrentSystem();
+  }
+
+  async function syncFromServer() {
+    try {
+      const r = await fetch('/api/current', { cache: 'no-store' });
+      const { seed } = await r.json();
+      applySeed(seed);
+    } catch (e) { /* server down — keep last-known */ }
+  }
+
+  async function rotateTarget() {
+    try {
+      const r = await fetch('/api/rotate', { method: 'POST' });
+      const { seed } = await r.json();
+      applySeed(seed);
+    } catch (e) { /* server down — leave current */ }
+  }
+
+  // Initial sync (async; may land during or after warmup).
+  syncFromServer();
+  // Chart pane polls for seed changes — no push channel across isolated profiles.
+  if (paneMode === 'chart' || paneMode === null) {
+    setInterval(syncFromServer, 1000);
+  }
 
   // ---------- Warmup / warp-in sequence ----------
   // On first load, crank speed way up and show a "warp priming" takeover on
@@ -301,8 +350,7 @@
       if (t >= 1) {
         warmupActive = false;
         systemMap.warpIn = false;
-        pickNewTarget();
-        scheduleNextHandover();
+        applyCurrentSystem();
       }
     }
 
@@ -321,20 +369,17 @@
       systemMap.tick();
     }
 
-    // Handover: only trigger while not in warmup
-    if (!warmupActive && (galaxy.shouldHandover() || Date.now() >= nextHandover)) {
-      pickNewTarget();
-      scheduleNextHandover();
+    // Handover: galaxy pane asks the server for a new seed when its reticle
+    // star drifts off-screen. Chart pane picks up the change via its poll.
+    if (!warmupActive && paneMode !== 'chart' && galaxy.shouldHandover()) {
+      rotateTarget();
     }
     requestAnimationFrame(frame);
   }
   requestAnimationFrame(frame);
 
   // ---------- Controls ----------
-  document.getElementById('newTargetBtn').addEventListener('click', () => {
-    pickNewTarget();
-    scheduleNextHandover();
-  });
+  document.getElementById('newTargetBtn').addEventListener('click', rotateTarget);
   document.getElementById('viewBtn').addEventListener('click', () => {
     // Toggle between side-by-side and galaxy-only (full bleed)
     const sm = document.getElementById('systemMonitor');
@@ -345,10 +390,6 @@
   // ---------- Tweaks / Edit mode protocol ----------
   function applyTweak(key, val) {
     TWEAK_DEFAULS[key] = val;
-    if (key === 'handoverMinutes') {
-      nextHandover = Date.now() + val * 60 * 1000;
-      hud.nextLockTime = nextHandover;
-    }
   }
   function wireTweakControls() {
     const drift = document.getElementById('driftSlider');
@@ -380,10 +421,7 @@
       // but here we just re-roll nebula tiles if changed (skipped for perf).
     });
 
-    document.getElementById('regenerate').addEventListener('click', () => {
-      pickNewTarget();
-      scheduleNextHandover();
-    });
+    document.getElementById('regenerate').addEventListener('click', rotateTarget);
   }
   function persist(edits) {
     try {

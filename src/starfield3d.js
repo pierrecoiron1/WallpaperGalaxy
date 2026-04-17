@@ -19,7 +19,11 @@ import { makeRng, hashToUnit } from './rng.js';
 const Z_MAX = 2000;
 const Z_MIN = 8;       // at this depth, star is "past" us and gets recycled
 const FOCAL = 1400;    // focal length — higher = narrower FOV
-const STAR_COUNT = 2600;
+
+// STAR_COUNT is density-normalized to a reference 3440×1440 canvas so larger
+// monitors don't render sparser. Computed per-instance against canvas area.
+const REFERENCE_STAR_COUNT = 2600;
+const REFERENCE_AREA = 3440 * 1440;
 
 // Per-monitor safe-area insets — keeps tracked stars (and the tracking
 // reticle) from drifting behind the GNOME top panel or Ubuntu dock.
@@ -77,9 +81,12 @@ export class Starfield3D {
     this.speed = opts.speed ?? 8;   // z units per second
     this.baseSpeed = this.speed;    // cruise speed
     this.stars = [];
+    // Scale star count by canvas area so density holds across resolutions.
+    const area = (canvas.width || REFERENCE_AREA) * (canvas.height || 1);
+    const starCount = Math.max(400, Math.round(REFERENCE_STAR_COUNT * area / REFERENCE_AREA));
     // Seed stars with a bias toward CLOSER z, so the sky isn't empty on load.
     // Cube-root distribution makes distance feel uniform in screen density.
-    for (let i = 0; i < STAR_COUNT; i++) {
+    for (let i = 0; i < starCount; i++) {
       const s = buildStar(this.nextStarSeed++, this.rng);
       // Remap z so ~60% of stars are within Z_MAX*0.4 (close-ish)
       const u = this.rng();

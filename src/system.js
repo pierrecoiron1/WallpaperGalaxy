@@ -191,5 +191,44 @@ export function generateSystem(seed) {
     // Drift numbers for decoration
     proper: `${(rng() * 40).toFixed(2)} km/s`,
     distance: `${(rng() * 4800 + 200).toFixed(0)} ly`,
+    signalIntercepts: buildSignalIntercepts(rng),
   };
+}
+
+// Signal Intercepts — clinical radio/neutrino/EM readings.  Most systems
+// show nominal flatlines; a small fraction (~8–12%) have an anomalous
+// line tucked into the stack as an Easter-egg.
+function buildSignalIntercepts(rng) {
+  const nominal = [
+    { band: 'RADIO 1420 MHz',   state: 'NOMINAL',     note: 'HYDROGEN LINE · BACKGROUND' },
+    { band: 'X-RAY 0.1–10 keV', state: 'NOMINAL',     note: 'STELLAR CORONA · CONSISTENT' },
+    { band: 'NEUTRINO FLUX',    state: 'NOMINAL',     note: 'PP-CHAIN · WITHIN TOLERANCE' },
+    { band: 'GRAV. WAVE',       state: 'NULL',        note: 'NO COHERENT SOURCE' },
+    { band: 'EM BROADBAND',     state: 'NOMINAL',     note: 'THERMAL · NO MODULATION' },
+  ];
+  // Pick 3 nominal lines deterministically.
+  const picked = [];
+  const pool = nominal.slice();
+  for (let i = 0; i < 3; i++) {
+    const idx = Math.floor(rng() * pool.length);
+    picked.push(pool.splice(idx, 1)[0]);
+  }
+  // Rare anomalous intercept — ~10% of systems.
+  const anomalyRoll = rng();
+  if (anomalyRoll < 0.10) {
+    const anomalies = [
+      { band: 'MASER · 22.235 GHz',   state: 'ANOMALOUS', note: 'COHERENT · UNRESOLVED',        hot: true },
+      { band: 'PULSED NEUTRINO',      state: 'ANOMALOUS', note: '1.47 Hz PERIODICITY · SOURCE UNKNOWN', hot: true },
+      { band: 'RADIO 1420 MHz',       state: 'ANOMALOUS', note: 'NARROWBAND · DRIFT < 0.01 Hz/s', hot: true },
+      { band: 'GAMMA BURST',          state: 'ARCHIVED',  note: 'EVENT 2487 IC · UNEXPLAINED',   hot: true },
+      { band: 'X-RAY 2.4 keV',        state: 'ANOMALOUS', note: 'INTERMITTENT · 11 MIN CYCLE',   hot: true },
+      { band: 'TACHYONIC ECHO',       state: 'FLAGGED',   note: 'INSTRUMENT FAULT SUSPECTED',    hot: true },
+      { band: 'LF 14 kHz',            state: 'ANOMALOUS', note: 'ARTIFICIAL SIGNATURE PROBABLE', hot: true },
+    ];
+    const a = anomalies[Math.floor(rng() * anomalies.length)];
+    // Insert at a random slot (not always at the bottom).
+    const slot = Math.floor(rng() * (picked.length + 1));
+    picked.splice(slot, 0, a);
+  }
+  return picked;
 }

@@ -8,14 +8,42 @@ set -euo pipefail
 
 APP_DIR="$HOME/.local/share/desktop-wallpaper"
 HTML="$APP_DIR/Desktop Wallpaper.html"
+SERVER_PY="$APP_DIR/wallpaper_server.py"
+SERVER_HOST="127.0.0.1"
+SERVER_PORT=43117
+SERVER_PID_FILE="/tmp/desktop-wallpaper-server.pid"
 
 if [[ ! -f "$HTML" ]]; then
   echo "HTML file not found at: $HTML" >&2
   exit 1
 fi
+if [[ ! -f "$SERVER_PY" ]]; then
+  echo "Backend server script not found at: $SERVER_PY" >&2
+  exit 1
+fi
 
-# file:// URL with spaces encoded
-URL_BASE="file://$(python3 -c 'import sys,urllib.parse as u; print(u.quote(sys.argv[1]))' "$HTML")"
+# Start the backend server (idempotent). The server holds the current target
+# seed that both panes sync against.
+start_server() {
+  if [[ -f "$SERVER_PID_FILE" ]] && kill -0 "$(cat "$SERVER_PID_FILE")" 2>/dev/null; then
+    return 0
+  fi
+  python3 "$SERVER_PY" >/dev/null 2>&1 &
+  echo $! > "$SERVER_PID_FILE"
+  # Poll /api/current up to ~3s to make sure it's listening before we launch Chromes.
+  for _ in $(seq 1 30); do
+    if curl -sfo /dev/null "http://${SERVER_HOST}:${SERVER_PORT}/api/current" 2>/dev/null; then
+      return 0
+    fi
+    sleep 0.1
+  done
+  echo "Backend server didn't respond within 3s — aborting." >&2
+  return 1
+}
+start_server
+
+# The HTML is served by the backend now — no more file:// origin.
+URL_BASE="http://${SERVER_HOST}:${SERVER_PORT}/Desktop%20Wallpaper.html"
 
 # Read per-monitor work areas from mutter so the HUD auto-respects the GNOME
 # top panel and Ubuntu dock. _GTK_WORKAREAS_D0 returns a flat list of 4-tuples
@@ -47,11 +75,33 @@ safe_area_for() {
 PROFILE_GALAXY="$HOME/.local/share/desktop-wallpaper-profile-galaxy"
 PROFILE_CHART="$HOME/.local/share/desktop-wallpaper-profile-chart"
 
-# Monitor geometries — from xrandr at setup time:
-#   DP-0    3440x1440+0+0     (left, ultrawide)
-#   HDMI-0  1920x1080+3440+0  (right)
-GALAXY_W=3440; GALAXY_H=1440; GALAXY_X=0;    GALAXY_Y=0
-CHART_W=1920;  CHART_H=1080;  CHART_X=3440;  CHART_Y=0
+# Discover monitors from xrandr. Galaxy goes on the primary, chart on the
+# first non-primary connected output. Format: "W H X Y" per match.
+xrandr_geom() {
+  local filter="$1"
+  xrandr --query 2>/dev/null \
+    | grep -E "$filter" \
+    | grep -oE '[0-9]+x[0-9]+\+[0-9]+\+[0-9]+' \
+    | head -1 \
+    | tr 'x+' ' '
+}
+PRIMARY_GEOM="$(xrandr_geom ' connected primary ')"
+SECONDARY_GEOM="$(xrandr --query 2>/dev/null | grep ' connected ' | grep -v ' primary ' | grep -oE '[0-9]+x[0-9]+\+[0-9]+\+[0-9]+' | head -1 | tr 'x+' ' ')"
+
+if [[ -z "$PRIMARY_GEOM" ]]; then
+  echo "No primary monitor found via xrandr — aborting." >&2
+  exit 1
+fi
+read GALAXY_W GALAXY_H GALAXY_X GALAXY_Y <<< "$PRIMARY_GEOM"
+
+HAS_CHART=1
+if [[ -n "$SECONDARY_GEOM" ]]; then
+  read CHART_W CHART_H CHART_X CHART_Y <<< "$SECONDARY_GEOM"
+else
+  # Single-monitor setup: skip chart pane rather than stacking it on galaxy.
+  HAS_CHART=0
+  CHART_W=0; CHART_H=0; CHART_X=0; CHART_Y=0
+fi
 
 # Derive HUD safe-area insets from the WM's declared work area per monitor.
 read GALAXY_TOP GALAXY_BOTTOM <<< "$(safe_area_for "$GALAXY_X" "$GALAXY_Y" "$GALAXY_H")"
@@ -72,15 +122,12 @@ fi
 
 launch() {
   local url="$1" profile="$2" class="$3" w="$4" h="$5" x="$6" y="$7"
-  # --allow-file-access-from-files is required so the HTML can import its
-  # ES modules from sibling src/*.js files over file://.
   google-chrome-stable \
     --user-data-dir="$profile" \
     --class="$class" \
     --app="$url" \
     --window-position="${x},${y}" \
     --window-size="${w},${h}" \
-    --allow-file-access-from-files \
     --no-first-run \
     --no-default-browser-check \
     --disable-session-crashed-bubble \
@@ -91,7 +138,9 @@ launch() {
 }
 
 launch "$URL_GALAXY" "$PROFILE_GALAXY" "$CLASS_GALAXY" "$GALAXY_W" "$GALAXY_H" "$GALAXY_X" "$GALAXY_Y"
-launch "$URL_CHART"  "$PROFILE_CHART"  "$CLASS_CHART"  "$CHART_W"  "$CHART_H"  "$CHART_X"  "$CHART_Y"
+if (( HAS_CHART )); then
+  launch "$URL_CHART"  "$PROFILE_CHART"  "$CLASS_CHART"  "$CHART_W"  "$CHART_H"  "$CHART_X"  "$CHART_Y"
+fi
 
 # Find the top-level managed window for each WM_CLASS via wmctrl.
 # wmctrl -lx reports only WM-managed windows so hidden Chrome helpers are
@@ -104,12 +153,16 @@ find_wid() {
 WID_GALAXY=""; WID_CHART=""
 for _ in $(seq 1 30); do
   [[ -z "$WID_GALAXY" ]] && WID_GALAXY="$(find_wid "$CLASS_GALAXY")"
-  [[ -z "$WID_CHART"  ]] && WID_CHART="$(find_wid "$CLASS_CHART")"
-  if [[ -n "$WID_GALAXY" && -n "$WID_CHART" ]]; then break; fi
+  if (( HAS_CHART )) && [[ -z "$WID_CHART" ]]; then
+    WID_CHART="$(find_wid "$CLASS_CHART")"
+  fi
+  if [[ -n "$WID_GALAXY" ]] && { (( ! HAS_CHART )) || [[ -n "$WID_CHART" ]]; }; then
+    break
+  fi
   sleep 0.5
 done
 
-if [[ -z "$WID_GALAXY" || -z "$WID_CHART" ]]; then
+if [[ -z "$WID_GALAXY" ]] || { (( HAS_CHART )) && [[ -z "$WID_CHART" ]]; }; then
   echo "Warning: couldn't find one of the windows (galaxy=$WID_GALAXY chart=$WID_CHART)" >&2
   echo "Wallpaper may appear as a normal window — run stop_wallpaper.sh and retry." >&2
   exit 1
@@ -130,7 +183,9 @@ demote() {
 }
 
 demote "$WID_GALAXY" "$GALAXY_W" "$GALAXY_H" "$GALAXY_X" "$GALAXY_Y"
-demote "$WID_CHART"  "$CHART_W"  "$CHART_H"  "$CHART_X"  "$CHART_Y"
+if (( HAS_CHART )); then
+  demote "$WID_CHART"  "$CHART_W"  "$CHART_H"  "$CHART_X"  "$CHART_Y"
+fi
 
 # Our wallpaper windows and DING (GNOME's desktop-icons extension) are both
 # type=DESKTOP, so mutter stacks them in mapping order. Since we just mapped
@@ -146,4 +201,8 @@ fi
 
 echo "Wallpaper launched."
 echo "  galaxy: WID=$WID_GALAXY  ${GALAXY_W}x${GALAXY_H}+${GALAXY_X}+${GALAXY_Y}"
-echo "  chart : WID=$WID_CHART  ${CHART_W}x${CHART_H}+${CHART_X}+${CHART_Y}"
+if (( HAS_CHART )); then
+  echo "  chart : WID=$WID_CHART  ${CHART_W}x${CHART_H}+${CHART_X}+${CHART_Y}"
+else
+  echo "  chart : (skipped — no secondary monitor detected)"
+fi
