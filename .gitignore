@@ -1,0 +1,12 @@
+# Editor / tooling
+.claude/
+.vscode/
+
+# Dev / scratch artifacts
+screenshots/
+uploads/
+debug_crop.png
+topright_zoom.png
+
+# Pre-bundled distributable — rebuild from sources instead of committing
+Desktop Wallpaper.zip

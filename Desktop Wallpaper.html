@@ -1,0 +1,409 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Desktop Wallpaper · Galaxy + System</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500&family=IBM+Plex+Sans:wght@200;300;400;500&display=swap" rel="stylesheet">
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body {
+    width: 100%; height: 100%;
+    background: #02060c;
+    color: #9fdada;
+    font-family: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
+    overflow: hidden;
+  }
+  /* Stage holds the two monitor panels at true resolution, scaled to fit */
+  .stage {
+    position: absolute; top: 0; left: 0; right: 0; bottom: 0;
+    display: flex; flex-direction: row; align-items: center; justify-content: center;
+    gap: 20px;
+    padding: 20px;
+  }
+  .monitor {
+    position: relative;
+    background: #000;
+    border: 1px solid #1a3a3a;
+    box-shadow: 0 0 0 4px #0a0a10, 0 30px 80px rgba(0, 0, 0, 0.8);
+  }
+  .monitor canvas {
+    display: block;
+    width: 100%; height: 100%;
+  }
+  .monitor .hud-layer {
+    position: absolute; inset: 0;
+    pointer-events: none;
+  }
+  .monitor-label {
+    position: absolute; bottom: -28px; left: 0;
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 10px;
+    color: #4c7a7a;
+    letter-spacing: 3px;
+  }
+
+  .controls {
+    position: fixed; top: 20px; left: 50%; transform: translateX(-50%);
+    z-index: 1000;
+    display: flex; gap: 8px;
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 11px;
+  }
+  .controls button {
+    background: rgba(10, 20, 28, 0.9);
+    color: #9fdada;
+    border: 1px solid #1a3a3a;
+    padding: 6px 14px;
+    font-family: inherit; font-size: inherit;
+    letter-spacing: 2px;
+    cursor: pointer;
+  }
+  .controls button:hover { border-color: #9fdada; color: #d4f6f6; }
+
+  /* Tweaks panel */
+  #tweaks {
+    position: fixed; bottom: 20px; right: 20px;
+    z-index: 1001;
+    display: none;
+    background: rgba(6, 12, 20, 0.95);
+    border: 1px solid #1a3a3a;
+    padding: 16px 18px;
+    min-width: 260px;
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 11px;
+    color: #9fdada;
+  }
+  #tweaks.on { display: block; }
+  #tweaks h3 {
+    font-family: "IBM Plex Sans", sans-serif;
+    font-weight: 300;
+    font-size: 14px;
+    letter-spacing: 4px;
+    margin-bottom: 14px;
+    color: #d4f6f6;
+  }
+  #tweaks label { display: block; margin: 10px 0; letter-spacing: 2px; color: #4c7a7a; font-size: 10px; }
+  #tweaks input[type="range"] { width: 100%; }
+  #tweaks .val { color: #d4f6f6; font-size: 11px; margin-left: 8px; }
+  #tweaks select {
+    background: #0a1420; color: #9fdada; border: 1px solid #1a3a3a;
+    font-family: inherit; padding: 4px 8px; width: 100%;
+  }
+  #tweaks button {
+    width: 100%;
+    background: rgba(200, 166, 107, 0.1);
+    color: #c8a66b; border: 1px solid #c8a66b;
+    padding: 8px; margin-top: 12px;
+    font-family: inherit; font-size: 11px;
+    letter-spacing: 3px; cursor: pointer;
+  }
+  #tweaks button:hover { background: rgba(200, 166, 107, 0.2); }
+
+  /* Single-pane mode (?pane=galaxy|chart) — one browser window per monitor
+     so each can be pinned as a live wallpaper on its own output. */
+  body.pane-mode { overflow: hidden; }
+  body.pane-mode .controls,
+  body.pane-mode #tweaks,
+  body.pane-mode .monitor-label { display: none !important; }
+  body.pane-mode .stage { padding: 0; gap: 0; }
+  body.pane-mode .monitor { border: none; box-shadow: none; }
+  body.pane-galaxy #systemMonitor { display: none; }
+  body.pane-chart #galaxyMonitor { display: none; }
+</style>
+</head>
+<body>
+
+<div class="controls">
+  <button id="newTargetBtn">⟳ NEW TARGET</button>
+  <button id="viewBtn">⛶ VIEW</button>
+</div>
+
+<div id="tweaks">
+  <h3>TWEAKS</h3>
+  <label>FLIGHT SPEED <span class="val" id="driftVal">1.0×</span>
+    <input type="range" id="driftSlider" min="0.2" max="4" step="0.1" value="1" />
+  </label>
+  <label>MAX TARGET HOLD <span class="val" id="intervalVal">10 min</span>
+    <input type="range" id="intervalSlider" min="1" max="30" step="1" value="10" />
+  </label>
+  <label>COLOR MODE
+    <select id="colorMode">
+      <option value="teal">TEAL (default)</option>
+      <option value="violet">VIOLET</option>
+      <option value="amber">AMBER</option>
+    </select>
+  </label>
+  <button id="regenerate">FORCE NEW TARGET</button>
+</div>
+
+<div class="stage" id="stage">
+  <div class="monitor" id="galaxyMonitor" data-screen-label="Galaxy 3440×1440">
+    <canvas id="galaxyCanvas" width="3440" height="1440"></canvas>
+    <canvas id="galaxyHUD" class="hud-layer" width="3440" height="1440"></canvas>
+    <div class="monitor-label">GALAXY · 3440 × 1440</div>
+  </div>
+  <div class="monitor" id="systemMonitor" data-screen-label="System 1920×1080">
+    <canvas id="systemCanvas" width="1920" height="1080"></canvas>
+    <div class="monitor-label">SYSTEM MAP · 1920 × 1080</div>
+  </div>
+</div>
+
+<script type="module">
+  // Parse URL query params BEFORE loading modules — modules read
+  // window.__safeArea at import time to build their drawing offsets.
+  const urlParams = new URLSearchParams(location.search);
+  const paneMode = urlParams.get('pane');
+  window.__safeArea = {
+    top:    parseInt(urlParams.get('top')    || '0', 10) || 0,
+    bottom: parseInt(urlParams.get('bottom') || '0', 10) || 0,
+  };
+  if (paneMode === 'galaxy' || paneMode === 'chart') {
+    document.body.classList.add('pane-mode', 'pane-' + paneMode);
+    // Distinctive title so the launcher can find each window via xdotool.
+    document.title = 'DesktopWallpaper-' + paneMode.toUpperCase();
+  }
+
+  // Cache-bust imports so we always get the latest module code
+  const V = 'v=' + Date.now();
+  const [{ Galaxy3D }, { GalaxyHUD }, { SystemMap }, { generateSystem }] = await Promise.all([
+    import(`./src/galaxy3d.js?${V}`),
+    import(`./src/galaxyhud.js?${V}`),
+    import(`./src/systemmap.js?${V}`),
+    import(`./src/system.js?${V}`),
+  ]);
+
+  const TWEAK_DEFAULS = /*EDITMODE-BEGIN*/{
+    "driftSpeed": 1.0,
+    "handoverMinutes": 10,
+    "nebulaIntensity": 1.0,
+    "colorMode": "teal"
+  }/*EDITMODE-END*/;
+
+  // ---------- Build instances ----------
+  const galaxyCanvas = document.getElementById('galaxyCanvas');
+  const galaxyHUDCanvas = document.getElementById('galaxyHUD');
+  const systemCanvas = document.getElementById('systemCanvas');
+
+  const galaxy = new Galaxy3D(galaxyCanvas, { seed: 1234 });
+  const hud = new GalaxyHUD(galaxyHUDCanvas, galaxy);
+  const systemMap = new SystemMap(systemCanvas);
+  // Expose for debugging
+  window.__galaxy = galaxy;
+  window.__hud = hud;
+  window.__systemMap = systemMap;
+
+  // ---------- Layout scaling ----------
+  // Fit the two monitors side-by-side in the viewport while preserving
+  // their aspect ratios. We use CSS sizing — canvases still render at true res.
+  function fitLayout() {
+    if (paneMode === 'galaxy' || paneMode === 'chart') {
+      const m = document.getElementById(paneMode === 'galaxy' ? 'galaxyMonitor' : 'systemMonitor');
+      m.style.width = window.innerWidth + 'px';
+      m.style.height = window.innerHeight + 'px';
+      return;
+    }
+    const stage = document.getElementById('stage');
+    const pad = 40;
+    const gap = 20;
+    const controlsTop = 60;
+    const labelBottom = 40;
+    const availW = window.innerWidth - pad * 2 - gap;
+    const availH = window.innerHeight - controlsTop - labelBottom;
+
+    // Total combined aspect: (3440 + 1920) x 1440 (the 1080 is shorter, we align centers)
+    // Scale each by same factor so heights match
+    const W1 = 3440, H1 = 1440;
+    const W2 = 1920, H2 = 1080;
+    // Pick scale so that combined width + height both fit
+    const scaleByW = availW / (W1 + W2);
+    const scaleByH = availH / Math.max(H1, H2);
+    const s = Math.min(scaleByW, scaleByH);
+
+    const g = document.getElementById('galaxyMonitor');
+    const sm = document.getElementById('systemMonitor');
+    g.style.width = (W1 * s) + 'px';
+    g.style.height = (H1 * s) + 'px';
+    sm.style.width = (W2 * s) + 'px';
+    sm.style.height = (H2 * s) + 'px';
+  }
+  fitLayout();
+  window.addEventListener('resize', fitLayout);
+
+  // ---------- Target selection & handover ----------
+  let currentTrack = null;
+  let currentSystem = null;
+
+  function pickNewTarget() {
+    // Try a few times to find a star well inside the viewport
+    let picked = null;
+    for (let tries = 0; tries < 5 && !picked; tries++) {
+      picked = galaxy.pickRandomVisibleStar();
+    }
+    if (!picked) return;
+    currentTrack = picked;
+    const system = generateSystem(picked.seedHash);
+    currentSystem = system;
+    galaxy.setHighlight(picked);
+    hud.setTrackedStar(picked, system);
+    systemMap.setSystem(system, true);
+  }
+
+  // Every handoverMinutes, pick a new one
+  let nextHandover = 0;
+  function scheduleNextHandover() {
+    nextHandover = Date.now() + TWEAK_DEFAULS.handoverMinutes * 60 * 1000;
+    hud.nextLockTime = nextHandover;
+  }
+
+  pickNewTarget();
+  scheduleNextHandover();
+
+  // ---------- Warmup / warp-in sequence ----------
+  // On first load, crank speed way up and show a "warp priming" takeover on
+  // the system map, so the galaxy fills with stars before we ease into cruise.
+  const WARMUP_MS = 8000;
+  let warmupStart = performance.now();
+  let warmupActive = true;
+  galaxy.highlightStar = null;
+  hud.trackedStar = null;
+  systemMap.warpIn = true;
+
+  // ---------- Persistence of camera position ----------
+  const SAVE_KEY = 'galaxy_wallpaper_state_v1';
+  function save() {
+    try {
+      localStorage.setItem(SAVE_KEY, JSON.stringify({
+        camX: galaxy.camX, camY: galaxy.camY,
+      }));
+    } catch (e) {}
+  }
+  function restore() {
+    try {
+      const s = JSON.parse(localStorage.getItem(SAVE_KEY) || '{}');
+      if (typeof s.camX === 'number') galaxy.camX = s.camX;
+      if (typeof s.camY === 'number') galaxy.camY = s.camY;
+    } catch (e) {}
+  }
+  restore();
+  setInterval(save, 2000);
+
+  // ---------- RAF loop ----------
+  function frame() {
+    // Warmup: ramp speed from ~25× down to 1× over WARMUP_MS
+    let warpMul = 1;
+    if (warmupActive) {
+      const elapsed = performance.now() - warmupStart;
+      const t = Math.min(1, elapsed / WARMUP_MS);
+      // Exponential decay from 25 → 1
+      warpMul = 1 + 24 * Math.pow(1 - t, 2.5);
+      if (t >= 1) {
+        warmupActive = false;
+        systemMap.warpIn = false;
+        pickNewTarget();
+        scheduleNextHandover();
+      }
+    }
+
+    // Apply drift speed × warp multiplier
+    const baseVX = 6, baseVY = 2.5;
+    galaxy.setSpeed(
+      baseVX * TWEAK_DEFAULS.driftSpeed * warpMul,
+      baseVY * TWEAK_DEFAULS.driftSpeed * warpMul
+    );
+
+    if (paneMode !== 'chart') {
+      galaxy.tick();
+      hud.tick();
+    }
+    if (paneMode !== 'galaxy') {
+      systemMap.tick();
+    }
+
+    // Handover: only trigger while not in warmup
+    if (!warmupActive && (galaxy.shouldHandover() || Date.now() >= nextHandover)) {
+      pickNewTarget();
+      scheduleNextHandover();
+    }
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+
+  // ---------- Controls ----------
+  document.getElementById('newTargetBtn').addEventListener('click', () => {
+    pickNewTarget();
+    scheduleNextHandover();
+  });
+  document.getElementById('viewBtn').addEventListener('click', () => {
+    // Toggle between side-by-side and galaxy-only (full bleed)
+    const sm = document.getElementById('systemMonitor');
+    sm.style.display = sm.style.display === 'none' ? '' : 'none';
+    fitLayout();
+  });
+
+  // ---------- Tweaks / Edit mode protocol ----------
+  function applyTweak(key, val) {
+    TWEAK_DEFAULS[key] = val;
+    if (key === 'handoverMinutes') {
+      nextHandover = Date.now() + val * 60 * 1000;
+      hud.nextLockTime = nextHandover;
+    }
+  }
+  function wireTweakControls() {
+    const drift = document.getElementById('driftSlider');
+    const driftVal = document.getElementById('driftVal');
+    drift.value = TWEAK_DEFAULS.driftSpeed;
+    driftVal.textContent = drift.value + '×';
+    drift.addEventListener('input', () => {
+      applyTweak('driftSpeed', +drift.value);
+      driftVal.textContent = drift.value + '×';
+      persist({ driftSpeed: +drift.value });
+    });
+
+    const interval = document.getElementById('intervalSlider');
+    const intervalVal = document.getElementById('intervalVal');
+    interval.value = TWEAK_DEFAULS.handoverMinutes;
+    intervalVal.textContent = interval.value + ' min';
+    interval.addEventListener('input', () => {
+      applyTweak('handoverMinutes', +interval.value);
+      intervalVal.textContent = interval.value + ' min';
+      persist({ handoverMinutes: +interval.value });
+    });
+
+    const mode = document.getElementById('colorMode');
+    mode.value = TWEAK_DEFAULS.colorMode;
+    mode.addEventListener('change', () => {
+      applyTweak('colorMode', mode.value);
+      persist({ colorMode: mode.value });
+      // Color mode affects highlight / HUD — simple CSS variable swap would be nice,
+      // but here we just re-roll nebula tiles if changed (skipped for perf).
+    });
+
+    document.getElementById('regenerate').addEventListener('click', () => {
+      pickNewTarget();
+      scheduleNextHandover();
+    });
+  }
+  function persist(edits) {
+    try {
+      window.parent.postMessage({ type: '__edit_mode_set_keys', edits }, '*');
+    } catch (e) {}
+  }
+  wireTweakControls();
+
+  // Edit mode toggle from host toolbar
+  window.addEventListener('message', (e) => {
+    const d = e.data || {};
+    if (d.type === '__activate_edit_mode') {
+      document.getElementById('tweaks').classList.add('on');
+    } else if (d.type === '__deactivate_edit_mode') {
+      document.getElementById('tweaks').classList.remove('on');
+    }
+  });
+  try {
+    window.parent.postMessage({ type: '__edit_mode_available' }, '*');
+  } catch (e) {}
+</script>
+</body>
+</html>
