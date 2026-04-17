@@ -125,9 +125,6 @@
   <label>FLIGHT SPEED <span class="val" id="driftVal">1.0×</span>
     <input type="range" id="driftSlider" min="0.2" max="4" step="0.1" value="1" />
   </label>
-  <label>MAX TARGET HOLD <span class="val" id="intervalVal">10 min</span>
-    <input type="range" id="intervalSlider" min="1" max="30" step="1" value="10" />
-  </label>
   <label>COLOR MODE
     <select id="colorMode">
       <option value="teal">TEAL (default)</option>
@@ -189,7 +186,6 @@
 
   const TWEAK_DEFAULS = /*EDITMODE-BEGIN*/{
     "driftSpeed": 1.0,
-    "handoverMinutes": 10,
     "nebulaIntensity": 1.0,
     "colorMode": "teal"
   }/*EDITMODE-END*/;
@@ -400,16 +396,6 @@
       applyTweak('driftSpeed', +drift.value);
       driftVal.textContent = drift.value + '×';
       persist({ driftSpeed: +drift.value });
-    });
-
-    const interval = document.getElementById('intervalSlider');
-    const intervalVal = document.getElementById('intervalVal');
-    interval.value = TWEAK_DEFAULS.handoverMinutes;
-    intervalVal.textContent = interval.value + ' min';
-    interval.addEventListener('input', () => {
-      applyTweak('handoverMinutes', +interval.value);
-      intervalVal.textContent = interval.value + ' min';
-      persist({ handoverMinutes: +interval.value });
     });
 
     const mode = document.getElementById('colorMode');
