@@ -288,14 +288,17 @@ export class GalaxyHUD {
     const wx = this.weather;
     if (wx && wx.temp !== undefined && !wx.error) {
       const deg = wx.units === 'metric' ? '°C' : '°F';
-      txt(ctx, 60, B - 56, `WX · ${wx.temp}${deg} · ${wx.condition}`, {
+      // Precip rounded to nearest 10% — weather forecasts aren't precise
+      // enough for single-percent detail to mean anything.
+      const precip10 = Math.round((wx.precip || 0) / 10) * 10;
+      txt(ctx, 60, B - 56, `${wx.temp}${deg} · ${wx.condition}`, {
         size: 11, color: FG, letterSpacing: 3,
       });
-      txt(ctx, 60, B - 38, `HI ${wx.high} · LO ${wx.low} · PRECIP ${wx.precip}%`, {
+      txt(ctx, 60, B - 38, `HI ${wx.high} · LO ${wx.low} · PRECIP ${precip10}%`, {
         size: 10, color: FG_DIM, letterSpacing: 3,
       });
     } else {
-      txt(ctx, 60, B - 56, `WX · LINK PENDING`, {
+      txt(ctx, 60, B - 56, `WEATHER LINK PENDING`, {
         size: 11, color: FG_DIM, letterSpacing: 3,
       });
       txt(ctx, 60, B - 38, `SET LOCATION IN CONFIG`, {
