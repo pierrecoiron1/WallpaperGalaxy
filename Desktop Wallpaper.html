@@ -318,6 +318,28 @@
     setInterval(pollWeather, 60 * 1000);
   }
 
+  // Live-apply flightSpeed + stellarDensity from the backend config. Both
+  // panes poll so chart-pane changes (if any) stay consistent, but only the
+  // galaxy pane renders the stars the density multiplier affects.
+  let _lastAppliedFlight = null;
+  let _lastAppliedDensity = null;
+  async function pollLiveConfig() {
+    try {
+      const r = await fetch('/api/config', { cache: 'no-store' });
+      const cfg = await r.json();
+      if (typeof cfg.flightSpeed === 'number' && cfg.flightSpeed !== _lastAppliedFlight) {
+        TWEAK_DEFAULS.driftSpeed = cfg.flightSpeed;
+        _lastAppliedFlight = cfg.flightSpeed;
+      }
+      if (typeof cfg.stellarDensity === 'number' && cfg.stellarDensity !== _lastAppliedDensity) {
+        if (paneMode !== 'chart') galaxy.setDensity(cfg.stellarDensity);
+        _lastAppliedDensity = cfg.stellarDensity;
+      }
+    } catch (e) { /* backend blip — ignore */ }
+  }
+  pollLiveConfig();
+  setInterval(pollLiveConfig, 15 * 1000);
+
   // ---------- Warmup / warp-in sequence ----------
   // On first load, crank speed way up and show a "warp priming" takeover on
   // the system map, so the galaxy fills with stars before we ease into cruise.

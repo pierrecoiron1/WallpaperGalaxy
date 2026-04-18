@@ -81,17 +81,12 @@ export class Starfield3D {
     this.speed = opts.speed ?? 8;   // z units per second
     this.baseSpeed = this.speed;    // cruise speed
     this.stars = [];
-    // Scale star count by canvas area so density holds across resolutions.
-    const area = (canvas.width || REFERENCE_AREA) * (canvas.height || 1);
-    const starCount = Math.max(400, Math.round(REFERENCE_STAR_COUNT * area / REFERENCE_AREA));
+    this.densityMultiplier = opts.densityMultiplier ?? 1.0;
     // Seed stars with a bias toward CLOSER z, so the sky isn't empty on load.
     // Cube-root distribution makes distance feel uniform in screen density.
+    const starCount = this._targetStarCount();
     for (let i = 0; i < starCount; i++) {
-      const s = buildStar(this.nextStarSeed++, this.rng);
-      // Remap z so ~60% of stars are within Z_MAX*0.4 (close-ish)
-      const u = this.rng();
-      s.z = Z_MIN + Math.pow(u, 2.2) * (Z_MAX - Z_MIN);
-      this.stars.push(s);
+      this._appendStar();
     }
 
     // Target tracking
@@ -104,6 +99,33 @@ export class Starfield3D {
   }
 
   setSpeed(s) { this.speed = s; }
+
+  _targetStarCount() {
+    const area = (this.canvas.width || REFERENCE_AREA) * (this.canvas.height || 1);
+    return Math.max(
+      100,
+      Math.round(REFERENCE_STAR_COUNT * this.densityMultiplier * area / REFERENCE_AREA)
+    );
+  }
+
+  _appendStar() {
+    const s = buildStar(this.nextStarSeed++, this.rng);
+    // Remap z so ~60% of stars are within Z_MAX*0.4 (close-ish).
+    s.z = Z_MIN + Math.pow(this.rng(), 2.2) * (Z_MAX - Z_MIN);
+    this.stars.push(s);
+  }
+
+  setDensity(mult) {
+    if (!Number.isFinite(mult) || mult <= 0) return;
+    if (mult === this.densityMultiplier) return;
+    this.densityMultiplier = mult;
+    const target = this._targetStarCount();
+    while (this.stars.length < target) this._appendStar();
+    if (this.stars.length > target) {
+      this.stars.length = target;
+      if (this.targetIdx !== null && this.targetIdx >= target) this.targetIdx = null;
+    }
+  }
 
   tick() {
     const now = performance.now();

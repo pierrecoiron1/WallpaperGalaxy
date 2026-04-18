@@ -71,7 +71,9 @@ def _default_config():
         "lat": 0.0,
         "lon": 0.0,
         "city": "UNKNOWN",
-        "units": "imperial",  # imperial | metric
+        "units": "imperial",      # imperial | metric
+        "flightSpeed": 1.0,       # multiplier, 0.25 .. 4.0 typical
+        "stellarDensity": 1.0,    # multiplier, 0.25 .. 4.0 typical
     }
 
 

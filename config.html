@@ -106,11 +106,23 @@
     letter-spacing: 3px;
     color: #c8a66b;
   }
-  .stub {
+  .slider-row {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    margin-top: 4px;
+    margin-bottom: 6px;
+  }
+  .slider {
+    flex: 1;
+    accent-color: #c8a66b;
+  }
+  .slider-val {
     font-family: "IBM Plex Mono", monospace;
-    font-size: 11px;
-    color: #4c7a7a;
-    font-style: italic;
+    font-size: 14px;
+    color: #d4f6f6;
+    min-width: 72px;
+    text-align: right;
   }
 </style>
 </head>
@@ -145,8 +157,19 @@
 </div>
 
 <div class="section">
-  <h2>FLIGHT SPEED · STELLAR DENSITY</h2>
-  <div class="stub">Sliders for these ride in a later update.</div>
+  <h2>FLIGHT SPEED</h2>
+  <div class="slider-row">
+    <input type="range" id="flightSpeedSlider" min="-2" max="2" step="0.1" value="0" class="slider">
+    <span class="slider-val" id="flightSpeedVal">1.00×</span>
+  </div>
+</div>
+
+<div class="section">
+  <h2>STELLAR DENSITY</h2>
+  <div class="slider-row">
+    <input type="range" id="stellarDensitySlider" min="-2" max="2" step="0.1" value="0" class="slider">
+    <span class="slider-val" id="stellarDensityVal">1.00×</span>
+  </div>
 </div>
 
 <div class="save-row">
@@ -158,6 +181,27 @@
 <script>
 const $ = (id) => document.getElementById(id);
 
+// Sliders work in log2 space so 1.0× sits exactly at the center of a
+// symmetric 0.25× – 4× range. Conversion: multiplier = 2 ** sliderValue.
+const fmtMult = (m) => `${(+m).toFixed(2)}×`;
+
+function applySliderValue(sliderId, valId, multiplier) {
+  const log2 = Math.log2(multiplier || 1);
+  $(sliderId).value = log2;
+  $(valId).textContent = fmtMult(multiplier);
+}
+function sliderMultiplier(sliderId) {
+  return Math.pow(2, parseFloat($(sliderId).value));
+}
+for (const [sliderId, valId] of [
+  ['flightSpeedSlider', 'flightSpeedVal'],
+  ['stellarDensitySlider', 'stellarDensityVal'],
+]) {
+  $(sliderId).addEventListener('input', () => {
+    $(valId).textContent = fmtMult(sliderMultiplier(sliderId));
+  });
+}
+
 async function loadConfig() {
   const cfg = await (await fetch('/api/config', {cache: 'no-store'})).json();
   $('currentCity').textContent = cfg.city || '(unset)';
@@ -165,6 +209,8 @@ async function loadConfig() {
   $('lonInput').value = cfg.lon ?? '';
   const radio = document.querySelector(`input[name=units][value="${cfg.units || 'imperial'}"]`);
   if (radio) radio.checked = true;
+  applySliderValue('flightSpeedSlider',    'flightSpeedVal',    cfg.flightSpeed    ?? 1);
+  applySliderValue('stellarDensitySlider', 'stellarDensityVal', cfg.stellarDensity ?? 1);
   return cfg;
 }
 
@@ -203,7 +249,9 @@ async function save() {
     $('status').textContent = 'NEED LAT + LON';
     return;
   }
-  const body = JSON.stringify({lat, lon, city, units});
+  const flightSpeed    = sliderMultiplier('flightSpeedSlider');
+  const stellarDensity = sliderMultiplier('stellarDensitySlider');
+  const body = JSON.stringify({lat, lon, city, units, flightSpeed, stellarDensity});
   const r = await fetch('/api/config', {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},

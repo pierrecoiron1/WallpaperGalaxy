@@ -14,6 +14,7 @@ script under platforms/linux/ or platforms/windows/.
 """
 
 import json
+import math
 import tkinter as tk
 import urllib.parse
 import urllib.request
@@ -55,6 +56,8 @@ class ConfigApp:
 
         self._build_location_section(root)
         self._build_units_section(root)
+        self._build_flight_section(root)
+        self._build_density_section(root)
         self._build_weather_section(root)
         self._build_action_row(root)
 
@@ -113,6 +116,37 @@ class ConfigApp:
             frame, text="Metric (°C)", variable=self.units_var, value="metric"
         ).pack(anchor="w", padx=12, pady=(0, 10))
 
+    def _build_flight_section(self, parent):
+        frame = ttk.LabelFrame(parent, text="FLIGHT SPEED")
+        frame.pack(fill="x", padx=12, pady=6)
+        self.flight_log_var = tk.DoubleVar(value=0.0)     # log2 space, center = 1×
+        self.flight_display_var = tk.StringVar(value="1.00×")
+        self._build_log_slider(frame, self.flight_log_var, self.flight_display_var)
+
+    def _build_density_section(self, parent):
+        frame = ttk.LabelFrame(parent, text="STELLAR DENSITY")
+        frame.pack(fill="x", padx=12, pady=6)
+        self.density_log_var = tk.DoubleVar(value=0.0)
+        self.density_display_var = tk.StringVar(value="1.00×")
+        self._build_log_slider(frame, self.density_log_var, self.density_display_var)
+
+    def _build_log_slider(self, parent, log_var, display_var):
+        """Shared helper — slider is log2(multiplier), so 0 ⇒ 1.0×."""
+        row = ttk.Frame(parent)
+        row.pack(fill="x", padx=12, pady=10)
+
+        def update_label(*_):
+            display_var.set(f"{2 ** log_var.get():.2f}×")
+
+        scale = ttk.Scale(
+            row, from_=-2.0, to=2.0, orient="horizontal",
+            variable=log_var, command=lambda _v: update_label(),
+        )
+        scale.pack(side="left", fill="x", expand=True)
+        ttk.Label(row, textvariable=display_var, width=8, anchor="e").pack(
+            side="left", padx=(12, 0)
+        )
+
     def _build_weather_section(self, parent):
         frame = ttk.LabelFrame(parent, text="CURRENT WEATHER")
         frame.pack(fill="x", padx=12, pady=6)
@@ -159,6 +193,13 @@ class ConfigApp:
         self.lat_var.set(str(cfg.get("lat", "")))
         self.lon_var.set(str(cfg.get("lon", "")))
         self.units_var.set(cfg.get("units", "imperial"))
+        # Sliders stored in log2 space so 1.0× is exactly centered.
+        flight = cfg.get("flightSpeed", 1.0) or 1.0
+        density = cfg.get("stellarDensity", 1.0) or 1.0
+        self.flight_log_var.set(math.log2(flight))
+        self.flight_display_var.set(f"{flight:.2f}×")
+        self.density_log_var.set(math.log2(density))
+        self.density_display_var.set(f"{density:.2f}×")
 
         try:
             wx = api_get("/api/weather")
@@ -232,6 +273,8 @@ class ConfigApp:
             "lon": lon,
             "city": self.current_city_var.get(),
             "units": self.units_var.get(),
+            "flightSpeed": 2 ** self.flight_log_var.get(),
+            "stellarDensity": 2 ** self.density_log_var.get(),
         }
         self.status_var.set("saving…")
         self.root.update_idletasks()

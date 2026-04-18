@@ -41,6 +41,8 @@ export class Galaxy3D {
     this.camVY = vyIgnored;
   }
 
+  setDensity(mult) { this.starfield.setDensity(mult); }
+
   // ---- Compatibility shims for HUD ----
   // In 3D mode, the "tracked star" is an index into the starfield. The HUD
   // called via setTrackedStar(starRef, system); starRef here is the star object.
