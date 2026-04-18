@@ -206,14 +206,19 @@ export class GalaxyHUD {
     txt(ctx, x, 186 + T, `${sys.planets.length} PLANETS · ${habCount} IN HAB. ZONE`, {
       size: 12, color: FG, letterSpacing: 2, align: 'right',
     });
-    txt(ctx, x, 206 + T, `STATUS · ${sys.status}`, {
-      size: 11, color: sys.status === 'CORE' ? FG_GOLD : FG_DIM, letterSpacing: 3, align: 'right',
-    });
-    if (sys.surveyYear) {
-      txt(ctx, x, 222 + T, `SURVEY ${sys.surveyYear} IC`, {
-        size: 10, color: FG_DIM, letterSpacing: 3, align: 'right',
-      });
+
+    // Survey breakdown across the planetary manifest. Derived locally from
+    // sys.planets[i].survey — generateSystem() is deterministic on seed so
+    // both panes see identical values.
+    let charted = 0, prelim = 0, unsurveyed = 0;
+    for (const p of sys.planets) {
+      if (p.survey === 'CHARTED') charted++;
+      else if (p.survey === 'PRELIMINARY') prelim++;
+      else unsurveyed++;
     }
+    txt(ctx, x, 206 + T, `CHARTED ${charted} · PRELIM ${prelim} · UNSURV ${unsurveyed}`, {
+      size: 11, color: FG_DIM, letterSpacing: 3, align: 'right',
+    });
   }
 
   renderReticle(x, y, t) {
