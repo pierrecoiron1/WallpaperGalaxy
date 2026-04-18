@@ -75,15 +75,15 @@ Python 3 and the DING GNOME extension are present by default on Ubuntu 24.04.
 
 ## Install
 
-1. **Stage the files** outside the repo so runtime paths are stable:
+1. **Stage the files** outside the repo so runtime paths are stable.
+   Run from the repo root:
 
    ```bash
-   mkdir -p ~/.local/share/desktop-wallpaper
-   cp -r "Desktop Wallpaper.html" src/ wallpaper_server.py \
-         start_wallpaper.sh stop_wallpaper.sh \
-         ~/.local/share/desktop-wallpaper/
-   chmod +x ~/.local/share/desktop-wallpaper/*.sh \
-            ~/.local/share/desktop-wallpaper/wallpaper_server.py
+   STAGE=~/.local/share/desktop-wallpaper
+   mkdir -p "$STAGE"
+   cp -r "Desktop Wallpaper.html" src/ wallpaper_server.py "$STAGE/"
+   cp platforms/linux/start_wallpaper.sh platforms/linux/stop_wallpaper.sh "$STAGE/"
+   chmod +x "$STAGE"/*.sh "$STAGE"/wallpaper_server.py
    ```
 
 2. **Start it:**
