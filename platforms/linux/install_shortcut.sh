@@ -36,6 +36,7 @@ Icon=$ICON_FILE
 Terminal=false
 Categories=Settings;
 Keywords=wallpaper;galaxy;weather;
+StartupWMClass=Wallpapergalaxyconfig
 EOF
 chmod +x "$MENU_FILE"
 

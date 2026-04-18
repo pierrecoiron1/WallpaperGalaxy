@@ -289,7 +289,10 @@ class ConfigApp:
 
 
 def main():
-    root = tk.Tk()
+    # className sets WM_CLASS so GNOME / other compositors can associate the
+    # running window with its .desktop launcher (StartupWMClass=) and use
+    # the app icon instead of a generic fallback.
+    root = tk.Tk(className="WallpaperGalaxyConfig")
     ConfigApp(root)
     root.mainloop()
 
