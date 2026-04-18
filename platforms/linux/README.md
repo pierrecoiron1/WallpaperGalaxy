@@ -81,9 +81,14 @@ Python 3 and the DING GNOME extension are present by default on Ubuntu 24.04.
    ```bash
    STAGE=~/.local/share/desktop-wallpaper
    mkdir -p "$STAGE"
-   cp -r "Desktop Wallpaper.html" src/ wallpaper_server.py "$STAGE/"
-   cp platforms/linux/start_wallpaper.sh platforms/linux/stop_wallpaper.sh "$STAGE/"
-   chmod +x "$STAGE"/*.sh "$STAGE"/wallpaper_server.py
+   cp -r "Desktop Wallpaper.html" config.html src/ Assets/ \
+         wallpaper_server.py config_gui.py \
+         "$STAGE/"
+   cp platforms/linux/start_wallpaper.sh \
+      platforms/linux/stop_wallpaper.sh \
+      platforms/linux/install_shortcut.sh \
+      "$STAGE/"
+   chmod +x "$STAGE"/*.sh "$STAGE"/wallpaper_server.py "$STAGE"/config_gui.py
    ```
 
 2. **Start it:**
@@ -117,16 +122,24 @@ Python 3 and the DING GNOME extension are present by default on Ubuntu 24.04.
 - **Backend health check**: `curl -s http://127.0.0.1:43117/api/current`
 - **Force a new target system**: `curl -sX POST http://127.0.0.1:43117/api/rotate`
 
-## Configure (location, units)
+## Configure (location, units, flight speed, stellar density)
 
 Two equivalent options — both write to the same config endpoint:
 
 - **Browser:** open `http://127.0.0.1:43117/config.html` in Brave/Chrome.
-- **Desktop GUI:**
+- **Desktop GUI:** install it once to your GNOME app menu, then launch it
+  like any other app:
+
   ```bash
-  sudo apt install python3-tk   # once; provides tkinter
-  python3 /path/to/repo/config_gui.py
+  sudo apt install python3-tk       # once — provides tkinter
+  ~/.local/share/desktop-wallpaper/install_shortcut.sh
   ```
+
+  That drops a `.desktop` entry in `~/.local/share/applications/` and the
+  icon in `~/.local/share/icons/hicolor/256x256/apps/`. Hit <kbd>Super</kbd>
+  and search "Wallpaper Galaxy Config".
+
+  To run without an app-menu entry: `python3 ~/.local/share/desktop-wallpaper/config_gui.py`
 
 ## Safe-area handling
 

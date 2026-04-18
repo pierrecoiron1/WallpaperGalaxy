@@ -76,15 +76,23 @@ Remove the shortcut by deleting:
 This stops the backend only. To remove the wallpaper itself, change or
 clear it in Lively.
 
-## Configure (location, units)
+## Configure (location, units, flight speed, stellar density)
 
 Two equivalent options — both write to the same config endpoint:
 
 - **Browser:** open `http://127.0.0.1:43117/config.html` in any browser.
-- **Desktop GUI:** run the Tkinter app (tkinter ships with Python on Windows).
+- **Desktop GUI:** install it to your Start Menu once, then launch it like
+  any other program:
+
   ```powershell
-  python config_gui.py
+  .\platforms\windows\install_shortcut.ps1
   ```
+
+  That creates "Wallpaper Galaxy Config.lnk" in your Programs folder.
+  Open the Start Menu and type "Wallpaper Galaxy" to find it. Uses the
+  galaxy icon from `Assets\APPicon.ico`.
+
+  To run without installing: `python config_gui.py` from the repo root.
 
 ## Known gaps / things to verify
 
