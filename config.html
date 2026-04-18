@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Wallpaper Galaxy · Config</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500&family=IBM+Plex+Sans:wght@200;300;400;500&display=swap" rel="stylesheet">
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
+    background: #02060c;
+    color: #9fdada;
+    padding: 40px 60px;
+    min-height: 100vh;
+  }
+  h1 {
+    font-weight: 200;
+    font-size: 28px;
+    letter-spacing: 6px;
+    color: #d4f6f6;
+    margin-bottom: 4px;
+  }
+  .sub {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 11px;
+    letter-spacing: 3px;
+    color: #4c7a7a;
+    margin-bottom: 32px;
+  }
+  .section {
+    border: 1px solid #1a3a3a;
+    padding: 20px 24px;
+    margin-bottom: 24px;
+    max-width: 720px;
+  }
+  .section h2 {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 11px;
+    letter-spacing: 4px;
+    font-weight: 400;
+    color: #4c7a7a;
+    margin-bottom: 16px;
+  }
+  label { display: block; margin: 12px 0 6px 0; font-size: 11px; letter-spacing: 2px; color: #4c7a7a; }
+  input[type="text"], input[type="number"] {
+    background: #0a1420;
+    border: 1px solid #1a3a3a;
+    color: #d4f6f6;
+    padding: 8px 12px;
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 13px;
+    width: 100%;
+    max-width: 400px;
+  }
+  input[type="text"]:focus, input[type="number"]:focus {
+    outline: none;
+    border-color: #9fdada;
+  }
+  .row { display: flex; gap: 12px; align-items: flex-end; flex-wrap: wrap; }
+  button {
+    background: rgba(200, 166, 107, 0.1);
+    color: #c8a66b;
+    border: 1px solid #c8a66b;
+    padding: 10px 18px;
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 11px;
+    letter-spacing: 3px;
+    cursor: pointer;
+  }
+  button:hover { background: rgba(200, 166, 107, 0.2); }
+  button.ghost {
+    background: transparent;
+    color: #9fdada;
+    border-color: #1a3a3a;
+  }
+  button.ghost:hover { border-color: #9fdada; }
+  #results { margin-top: 8px; }
+  .result-row {
+    padding: 8px 12px;
+    border-bottom: 1px solid #1a3a3a;
+    cursor: pointer;
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 12px;
+  }
+  .result-row:hover { background: rgba(159, 218, 218, 0.05); color: #d4f6f6; }
+  .current {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 12px;
+    color: #d4f6f6;
+    padding: 6px 10px;
+    border-left: 2px solid #c8a66b;
+    margin-top: 8px;
+  }
+  .toggle { display: flex; gap: 16px; margin-top: 8px; }
+  .toggle label {
+    display: flex; align-items: center; gap: 8px;
+    font-size: 12px; letter-spacing: 1px; color: #9fdada;
+    cursor: pointer;
+  }
+  .save-row { display: flex; gap: 16px; align-items: center; margin-top: 20px; }
+  #status {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 11px;
+    letter-spacing: 3px;
+    color: #c8a66b;
+  }
+  .stub {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 11px;
+    color: #4c7a7a;
+    font-style: italic;
+  }
+</style>
+</head>
+<body>
+
+<h1>WALLPAPER GALAXY · CONFIG</h1>
+<div class="sub">CHANGES TAKE EFFECT WITHIN ~1 MINUTE · NO RESTART NEEDED</div>
+
+<div class="section">
+  <h2>LOCATION · WEATHER SOURCE</h2>
+  <label for="citySearch">SEARCH CITY</label>
+  <div class="row">
+    <input id="citySearch" type="text" placeholder="e.g. Portland, Oregon">
+    <button id="searchBtn">SEARCH</button>
+  </div>
+  <div id="results"></div>
+  <div class="current">CURRENT · <span id="currentCity">...</span></div>
+
+  <label>LATITUDE / LONGITUDE (ADVANCED)</label>
+  <div class="row">
+    <input id="latInput" type="number" step="0.0001" style="max-width: 180px">
+    <input id="lonInput" type="number" step="0.0001" style="max-width: 180px">
+  </div>
+</div>
+
+<div class="section">
+  <h2>UNITS</h2>
+  <div class="toggle">
+    <label><input type="radio" name="units" value="imperial"> IMPERIAL (°F)</label>
+    <label><input type="radio" name="units" value="metric"> METRIC (°C)</label>
+  </div>
+</div>
+
+<div class="section">
+  <h2>FLIGHT SPEED · STELLAR DENSITY</h2>
+  <div class="stub">Sliders for these ride in a later update.</div>
+</div>
+
+<div class="save-row">
+  <button id="saveBtn">SAVE</button>
+  <button id="reloadBtn" class="ghost">RELOAD</button>
+  <span id="status"></span>
+</div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+
+async function loadConfig() {
+  const cfg = await (await fetch('/api/config', {cache: 'no-store'})).json();
+  $('currentCity').textContent = cfg.city || '(unset)';
+  $('latInput').value = cfg.lat ?? '';
+  $('lonInput').value = cfg.lon ?? '';
+  const radio = document.querySelector(`input[name=units][value="${cfg.units || 'imperial'}"]`);
+  if (radio) radio.checked = true;
+  return cfg;
+}
+
+async function search() {
+  const q = $('citySearch').value.trim();
+  const out = $('results');
+  out.innerHTML = '';
+  if (!q) return;
+  const data = await (await fetch('/api/geocode?q=' + encodeURIComponent(q))).json();
+  const results = data.results || [];
+  if (!results.length) {
+    out.innerHTML = '<div class="result-row" style="cursor:default;color:#4c7a7a">(no matches)</div>';
+    return;
+  }
+  for (const r of results) {
+    const div = document.createElement('div');
+    div.className = 'result-row';
+    const region = r.admin1 || r.admin2 || '';
+    div.textContent = `${r.name}${region ? ', ' + region : ''} · ${r.country}  (${r.latitude.toFixed(3)}, ${r.longitude.toFixed(3)})`;
+    div.addEventListener('click', () => {
+      $('latInput').value = r.latitude;
+      $('lonInput').value = r.longitude;
+      $('currentCity').textContent = `${r.name}${region ? ', ' + region : ''}`;
+      out.innerHTML = '';
+    });
+    out.appendChild(div);
+  }
+}
+
+async function save() {
+  const lat = parseFloat($('latInput').value);
+  const lon = parseFloat($('lonInput').value);
+  const units = document.querySelector('input[name=units]:checked')?.value || 'imperial';
+  const city = $('currentCity').textContent;
+  if (Number.isNaN(lat) || Number.isNaN(lon)) {
+    $('status').textContent = 'NEED LAT + LON';
+    return;
+  }
+  const body = JSON.stringify({lat, lon, city, units});
+  const r = await fetch('/api/config', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body,
+  });
+  if (r.ok) {
+    $('status').textContent = 'SAVED · WEATHER REFETCHING';
+    setTimeout(() => $('status').textContent = '', 3000);
+  } else {
+    $('status').textContent = 'FAILED';
+  }
+}
+
+$('searchBtn').addEventListener('click', search);
+$('citySearch').addEventListener('keydown', (e) => { if (e.key === 'Enter') search(); });
+$('saveBtn').addEventListener('click', save);
+$('reloadBtn').addEventListener('click', loadConfig);
+
+loadConfig();
+</script>
+</body>
+</html>

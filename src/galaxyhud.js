@@ -80,7 +80,10 @@ export class GalaxyHUD {
     this.targetScreen = null;   // {x, y} — where the tracked star is on screen
     this.startT = performance.now();
     this.nextLockTime = Date.now() + 10 * 60 * 1000;
+    this.weather = null;        // last snapshot fetched from /api/weather
   }
+
+  setWeather(wx) { this.weather = wx; }
 
   setTrackedStar(starRef, system) {
     this.trackedStar = starRef;
@@ -272,7 +275,8 @@ export class GalaxyHUD {
 
     line(ctx, 60, B - 80, W - 60, B - 80, FG_DIM);
 
-    // Left: transmission marker + scroll ticker
+    // Left: local weather (two-line) — replaces the old CHRONO / FLIGHT
+    // RECORDER rows since the center column already shows wall-clock time.
     const now = new Date();
     const h24 = now.getHours();
     const h12 = ((h24 + 11) % 12) + 1;
@@ -280,14 +284,24 @@ export class GalaxyHUD {
     const mm = String(now.getMinutes()).padStart(2, '0');
     const ss = String(now.getSeconds()).padStart(2, '0');
     const hh12 = String(h12).padStart(2, '0');
-    const shortTime = `${hh12}:${mm} ${ampm}`;       // used on the thin chrono row
     const bigTime = `${hh12}:${mm}:${ss} ${ampm}`;   // used on the center display
-    txt(ctx, 60, B - 56, `CHRONO · ${shortTime}`, {
-      size: 11, color: FG, letterSpacing: 3,
-    });
-    txt(ctx, 60, B - 38, `FLIGHT RECORDER · INDEX ${Math.floor(t).toString().padStart(6, '0')}`, {
-      size: 10, color: FG_DIM, letterSpacing: 3,
-    });
+    const wx = this.weather;
+    if (wx && wx.temp !== undefined && !wx.error) {
+      const deg = wx.units === 'metric' ? '°C' : '°F';
+      txt(ctx, 60, B - 56, `WX · ${wx.temp}${deg} · ${wx.condition}`, {
+        size: 11, color: FG, letterSpacing: 3,
+      });
+      txt(ctx, 60, B - 38, `HI ${wx.high} · LO ${wx.low} · PRECIP ${wx.precip}%`, {
+        size: 10, color: FG_DIM, letterSpacing: 3,
+      });
+    } else {
+      txt(ctx, 60, B - 56, `WX · LINK PENDING`, {
+        size: 11, color: FG_DIM, letterSpacing: 3,
+      });
+      txt(ctx, 60, B - 38, `SET LOCATION IN CONFIG`, {
+        size: 10, color: FG_DIM, letterSpacing: 3,
+      });
+    }
 
     // Center: wall-clock date + time (replaces the previous handover countdown)
     const weekday = now.toLocaleDateString(undefined, { weekday: 'long' }).toUpperCase();
