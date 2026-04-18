@@ -788,20 +788,20 @@ export class SystemMap {
         ctx.save();
         ctx.globalAlpha *= a;
         const stateColor = s.hot ? '#c87070' : FG_DIM;
-        // band on the left, state right-aligned at typeRight, note
-        // right-aligned at surveyRight.
+        // Band on the first line, then note + state share the second line
+        // (state right-aligned alongside the note it qualifies).
         rText(ctx, colX, y, s.band, {
           size: 10, color: s.hot ? FG : FG_DIM, letterSpacing: 2,
           reveal: { t: rT, start: rowStart, end: rowStart + 0.04 },
-        });
-        rText(ctx, colX + colW, y, s.state, {
-          size: 10, color: stateColor, letterSpacing: 2, align: 'right',
-          reveal: { t: rT, start: rowStart + 0.01, end: rowStart + 0.05 },
         });
         y += 14;
         rText(ctx, colX, y, s.note, {
           size: 9, color: s.hot ? '#c87070' : FG_DIM, letterSpacing: 2,
           reveal: { t: rT, start: rowStart + 0.02, end: rowStart + 0.06 },
+        });
+        rText(ctx, colX + colW, y, s.state, {
+          size: 10, color: stateColor, letterSpacing: 2, align: 'right',
+          reveal: { t: rT, start: rowStart + 0.01, end: rowStart + 0.05 },
         });
         ctx.restore();
         y += 16;
