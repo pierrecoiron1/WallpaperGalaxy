@@ -16,6 +16,24 @@ Pick your platform:
 - **Windows 10 / 11** (via Lively Wallpaper, *untested — help wanted*) →
   [platforms/windows/README.md](platforms/windows/README.md)
 
+## Configure (location, units)
+
+Two interchangeable ways to change settings — both hit the same backend
+endpoints, so pick whichever suits the moment:
+
+- **Browser:** open `http://127.0.0.1:43117/config.html` in a regular browser
+  window (not the wallpaper itself — it's a desktop layer that can't take
+  input).
+- **Desktop app:** run the stdlib-only Tkinter GUI — works on Linux,
+  Windows, macOS without extra packages beyond Python.
+
+  ```bash
+  python3 config_gui.py
+  ```
+
+  On Ubuntu you may need `sudo apt install python3-tk` once. Windows and
+  macOS Python ships with tkinter bundled.
+
 ## Repo layout
 
 ```
@@ -29,6 +47,8 @@ Pick your platform:
 │   ├── system.js            # procedural star+planet generator
 │   └── nebula.js, rng.js, …
 ├── wallpaper_server.py      # local sync backend (shared; stdlib only)
+├── config.html              # browser config page served by the backend
+├── config_gui.py            # Tkinter desktop config app (cross-platform)
 ├── platforms/
 │   ├── linux/               # bash launch scripts + GNOME autostart
 │   └── windows/              # PowerShell scripts + Lively Wallpaper setup

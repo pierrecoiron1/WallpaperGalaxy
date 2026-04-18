@@ -117,6 +117,17 @@ Python 3 and the DING GNOME extension are present by default on Ubuntu 24.04.
 - **Backend health check**: `curl -s http://127.0.0.1:43117/api/current`
 - **Force a new target system**: `curl -sX POST http://127.0.0.1:43117/api/rotate`
 
+## Configure (location, units)
+
+Two equivalent options — both write to the same config endpoint:
+
+- **Browser:** open `http://127.0.0.1:43117/config.html` in Brave/Chrome.
+- **Desktop GUI:**
+  ```bash
+  sudo apt install python3-tk   # once; provides tkinter
+  python3 /path/to/repo/config_gui.py
+  ```
+
 ## Safe-area handling
 
 The galaxy HUD auto-avoids the GNOME top panel and Ubuntu dock by reading

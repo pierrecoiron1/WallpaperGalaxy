@@ -76,6 +76,16 @@ Remove the shortcut by deleting:
 This stops the backend only. To remove the wallpaper itself, change or
 clear it in Lively.
 
+## Configure (location, units)
+
+Two equivalent options — both write to the same config endpoint:
+
+- **Browser:** open `http://127.0.0.1:43117/config.html` in any browser.
+- **Desktop GUI:** run the Tkinter app (tkinter ships with Python on Windows).
+  ```powershell
+  python config_gui.py
+  ```
+
 ## Known gaps / things to verify
 
 - **Multi-monitor sync.** Both panes fetch from `http://127.0.0.1:43117` so
