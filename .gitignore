@@ -2,6 +2,10 @@
 .claude/
 .vscode/
 
+# Python bytecode
+__pycache__/
+*.py[cod]
+
 # Dev / scratch artifacts
 screenshots/
 uploads/
