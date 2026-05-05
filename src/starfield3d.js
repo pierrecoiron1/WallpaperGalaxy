@@ -22,8 +22,12 @@ const FOCAL = 1400;    // focal length — higher = narrower FOV
 
 // STAR_COUNT is density-normalized to a reference 3440×1440 canvas so larger
 // monitors don't render sparser. Computed per-instance against canvas area.
-const REFERENCE_STAR_COUNT = 2600;
+const REFERENCE_STAR_COUNT = 13000;
 const REFERENCE_AREA = 3440 * 1440;
+
+// Newly-spawned stars (recycled or density-added) ramp their alpha from 0 to
+// full over this many seconds, so they don't pop in.
+const FADE_IN_SEC = 1.5;
 
 // Per-monitor safe-area insets — keeps tracked stars (and the tracking
 // reticle) from drifting behind the GNOME top panel or Ubuntu dock.
@@ -86,7 +90,8 @@ export class Starfield3D {
     // Cube-root distribution makes distance feel uniform in screen density.
     const starCount = this._targetStarCount();
     for (let i = 0; i < starCount; i++) {
-      this._appendStar();
+      // Initial fill is pre-faded (bornAt = -Infinity → fade alpha = 1).
+      this._appendStar(-Infinity);
     }
 
     // Target tracking
@@ -108,10 +113,11 @@ export class Starfield3D {
     );
   }
 
-  _appendStar() {
+  _appendStar(bornAt) {
     const s = buildStar(this.nextStarSeed++, this.rng);
     // Remap z so ~60% of stars are within Z_MAX*0.4 (close-ish).
     s.z = Z_MIN + Math.pow(this.rng(), 2.2) * (Z_MAX - Z_MIN);
+    s.bornAt = bornAt;
     this.stars.push(s);
   }
 
@@ -120,7 +126,8 @@ export class Starfield3D {
     if (mult === this.densityMultiplier) return;
     this.densityMultiplier = mult;
     const target = this._targetStarCount();
-    while (this.stars.length < target) this._appendStar();
+    const nowSec = performance.now() * 0.001;
+    while (this.stars.length < target) this._appendStar(nowSec);
     if (this.stars.length > target) {
       this.stars.length = target;
       if (this.targetIdx !== null && this.targetIdx >= target) this.targetIdx = null;
@@ -149,6 +156,7 @@ export class Starfield3D {
       if (recycle) {
         const newStar = buildStar(this.nextStarSeed++, this.rng);
         newStar.z = Z_MAX;
+        newStar.bornAt = now * 0.001;  // fade in from 0 alpha
         this.stars[i] = newStar;
         if (this.targetIdx === i) this.targetIdx = null;
       }
@@ -182,6 +190,13 @@ export class Starfield3D {
       let alpha = s.bright * Math.min(1, scale * 0.5 + 0.15);
       // Twinkle
       alpha *= 0.93 + 0.07 * Math.sin(t * 2 + s.phase);
+      // Fade-in for newly-spawned (recycled / density-added) stars so they
+      // ramp up from zero alpha rather than popping in. Initial fill stars
+      // have bornAt = -Infinity, so fadeMul stays 1.0.
+      const age = t - s.bornAt;
+      if (age < FADE_IN_SEC) {
+        alpha *= Math.max(0, age) / FADE_IN_SEC;
+      }
 
       const col = s.color;
 
