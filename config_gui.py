@@ -166,6 +166,9 @@ class ConfigApp:
         ttk.Button(frame, text="Refresh", command=self.refresh).pack(
             side="left", padx=(6, 0)
         )
+        ttk.Button(frame, text="Restart Wallpaper", command=self.restart).pack(
+            side="left", padx=(6, 0)
+        )
         self.status_var = tk.StringVar(value="")
         ttk.Label(
             frame, textvariable=self.status_var, foreground="#b48a3b"
@@ -286,6 +289,30 @@ class ConfigApp:
         self.status_var.set("saved")
         # Backend kicks off a weather refetch; give it ~2s then reload.
         self.root.after(2000, self.refresh)
+
+    def restart(self):
+        if not messagebox.askyesno(
+            "Restart wallpaper?",
+            "Stop both monitor windows and relaunch them. The wallpaper will be "
+            "blank for ~5 seconds. Use this when you've installed a code update "
+            "(e.g. star count changes) that needs a fresh page load.",
+        ):
+            return
+        self.status_var.set("restarting…")
+        self.root.update_idletasks()
+        try:
+            api_post("/api/restart", {})
+        except Exception:
+            # The server may die mid-response while it's killing itself —
+            # that's expected, the restart was already scheduled.
+            pass
+        # New backend takes ~3-5s to come back up. Give it a margin.
+        self.root.after(7000, self._post_restart_refresh)
+
+    def _post_restart_refresh(self):
+        self.status_var.set("restarted")
+        self.refresh()
+        self.root.after(3000, lambda: self.status_var.set(""))
 
 
 def main():

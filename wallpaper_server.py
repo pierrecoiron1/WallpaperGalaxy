@@ -22,6 +22,8 @@ import http.server
 import json
 import os
 import random
+import subprocess
+import sys
 import threading
 import time
 import urllib.parse
@@ -144,6 +146,56 @@ def _fetch_weather(cfg):
     }
 
 
+def _schedule_restart():
+    """Kick off a detached process that stops + restarts the wallpaper.
+
+    The respond-then-die pattern: by the time the spawned process actually
+    runs the stop script (which kills *this* server), our HTTP response is
+    already on the wire. The new server comes up ~3-4s later.
+
+    Returns True if a restart was scheduled, False if no platform script
+    pair was found.
+    """
+    here = os.path.dirname(os.path.abspath(__file__))
+
+    if sys.platform.startswith("linux"):
+        stop  = os.path.join(here, "stop_wallpaper.sh")
+        start = os.path.join(here, "start_wallpaper.sh")
+        if not (os.path.exists(stop) and os.path.exists(start)):
+            return False
+        # Single shell command: stop, brief gap so X has time to clean up
+        # window state, then start. Detached from this process so killing
+        # this server doesn't take it down.
+        subprocess.Popen(
+            ["bash", "-c", f'"{stop}"; sleep 2; "{start}"'],
+            start_new_session=True,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        return True
+
+    if sys.platform == "win32":
+        stop  = os.path.join(here, "platforms", "windows", "stop_server.ps1")
+        start = os.path.join(here, "platforms", "windows", "start_server.ps1")
+        if not (os.path.exists(stop) and os.path.exists(start)):
+            return False
+        ps_cmd = (
+            f"& '{stop}'; Start-Sleep -Seconds 2; & '{start}'"
+        )
+        subprocess.Popen(
+            ["powershell", "-NoProfile", "-WindowStyle", "Hidden", "-Command", ps_cmd],
+            creationflags=getattr(subprocess, "DETACHED_PROCESS", 0)
+                          | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0),
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        return True
+
+    return False
+
+
 def _weather_worker():
     """Refresh weather every WEATHER_REFRESH_SEC, or sooner when woken."""
     global _weather
@@ -166,12 +218,19 @@ class Handler(http.server.SimpleHTTPRequestHandler):
     def log_message(self, *args):
         pass  # quiet
 
+    def end_headers(self):
+        # Mark every response as non-cacheable. Without this, Chrome's HTTP
+        # cache (kept inside the persistent --user-data-dir) can serve stale
+        # JS modules across wallpaper restarts even when the on-disk file has
+        # changed — see commit history for the bug this fixed.
+        self.send_header("Cache-Control", "no-store")
+        super().end_headers()
+
     def _send_json(self, payload, status=HTTPStatus.OK):
         body = json.dumps(payload).encode("utf-8")
         self.send_response(status)
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(body)))
-        self.send_header("Cache-Control", "no-store")
         self.end_headers()
         self.wfile.write(body)
 
@@ -222,6 +281,17 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 _current_seed = random.getrandbits(32)
                 seed = _current_seed
             self._send_json({"seed": seed})
+            return
+
+        if path == "/api/restart":
+            ok = _schedule_restart()
+            if ok:
+                self._send_json({"ok": True, "message": "restart scheduled"})
+            else:
+                self._send_json(
+                    {"ok": False, "error": "no platform restart scripts found"},
+                    status=HTTPStatus.NOT_IMPLEMENTED,
+                )
             return
 
         if path == "/api/config":

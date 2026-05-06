@@ -175,6 +175,7 @@
 <div class="save-row">
   <button id="saveBtn">SAVE</button>
   <button id="reloadBtn" class="ghost">RELOAD</button>
+  <button id="restartBtn" class="ghost">RESTART WALLPAPER</button>
   <span id="status"></span>
 </div>
 
@@ -265,10 +266,26 @@ async function save() {
   }
 }
 
+async function restart() {
+  if (!confirm("Stop both monitor windows and relaunch them? Wallpaper will be blank for ~5 seconds.")) return;
+  $('status').textContent = 'RESTARTING…';
+  try {
+    // The backend dies mid-response while it kills itself, so the fetch
+    // may throw. Either outcome is fine — the restart is scheduled.
+    await fetch('/api/restart', { method: 'POST' });
+  } catch (e) { /* expected */ }
+  setTimeout(() => {
+    $('status').textContent = 'RESTARTED';
+    loadConfig();
+    setTimeout(() => $('status').textContent = '', 3000);
+  }, 7000);
+}
+
 $('searchBtn').addEventListener('click', search);
 $('citySearch').addEventListener('keydown', (e) => { if (e.key === 'Enter') search(); });
 $('saveBtn').addEventListener('click', save);
 $('reloadBtn').addEventListener('click', loadConfig);
+$('restartBtn').addEventListener('click', restart);
 
 loadConfig();
 </script>
